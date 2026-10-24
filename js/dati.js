@@ -173,7 +173,7 @@
     principali.forEach((p) => {
       const a = p.affare;
       delete p.affare;
-      stato.contatti.push(Object.assign({ altriTelefoni: [], altreEmail: [], consensi: { whatsapp: p.fonte === 'Passaparola' || p.fonte === 'Sito' ? 'non-registrato' : 'si', email: p.fonte === 'Passaparola' ? 'non-registrato' : 'si' }, etichette: [], nonLetti: 0, numeroUsato: p.responsabile === 'u3' ? 'n2' : p.responsabile ? 'n1' : 'n3' }, p));
+      stato.contatti.push(Object.assign({ altriTelefoni: [], altreEmail: [], consensi: { whatsapp: p.fonte === 'Passaparola' || p.fonte === 'Sito' ? 'non-registrato' : 'si', email: p.fonte === 'Passaparola' ? 'non-registrato' : 'si' }, etichette: [], nonLetti: 0, numeroUsato: p.responsabile === 'u3' ? 'n2' : p.responsabile === 'u2' ? 'n1' : 'n3' }, p));
       const percorso = stato.percorsi.find((x) => x.id === a.percorso);
       const fase = percorso.fasi.find((f) => f.id === a.fase);
       stato.affari.push(Object.assign({ contatto: p.id, nome: a.descrizione, seguaci: [], creato: p.creato, stato: fase.tipo === 'vinto' ? 'vinto' : fase.tipo === 'perso' ? 'perso' : 'aperto', documenti: [], faseCambiata: p.creato }, a, {

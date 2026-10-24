@@ -213,10 +213,24 @@
     R.stato.turno += 1;
     return u.id;
   };
+  /* Contatto da un modulo (pagina pubblica, sondaggio o modulo pubblicitario Meta).
+     Oltre a nome, telefono, email e consensi accetta l'esito delle regole di qualificazione (regole.js):
+     d.fonte ('Landing' | 'Facebook' | 'Instagram'…), d.risposte { domanda: risposta },
+     d.azioni { fase: 'p1|f1', responsabile: 'turno'|'nessuno'|'u2', etichette, automazione: 'au1'|'nessuna', promemoria: 'si'|'no' },
+     d.regola (testo che spiega quale regola ha deciso). Senza azioni: Finanza agevolata · Nuovo contatto, a turno, benvenuto au1. */
   R.nuovoContattoDaModulo = (d) => {
+    const azioni = Object.assign({ fase: 'p1|f1', responsabile: 'turno', etichette: '', automazione: 'au1', promemoria: 'si' }, d.azioni || {});
+    if (!azioni.fase) azioni.fase = 'p1|f1';
+    if (!azioni.automazione) azioni.automazione = 'au1';
+    const [percorsoId, faseId] = azioni.fase.split('|');
     const esistente = R.trovaDoppione(d.telefono, d.email);
     const campagna = d.campagna || '';
     const pagina = d.pagina || '';
+    const daMeta = d.fonte && d.fonte !== 'Landing';
+    const modulo = daMeta ? `modulo ${d.fonte}${d.moduloMeta ? ' «' + d.moduloMeta + '»' : ''}` : '';
+    const origine = daMeta ? 'il ' + modulo : `il modulo della pagina ${pagina || campagna}`;
+    const daOrigine = daMeta ? 'dal ' + modulo : `dalla pagina ${pagina || campagna}`;
+    const risposteTxt = Object.entries(d.risposte || {}).filter(([, v]) => v !== '' && v != null).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' · ');
     let c = esistente;
     let nuovo = false;
     if (c) {
@@ -225,35 +239,41 @@
       if (d.nome && c.referente && c.referente.toLowerCase() !== d.nome.toLowerCase() && c.nome.toLowerCase() !== d.nome.toLowerCase()) diversi.push('nome ' + d.nome);
       if (!c.email && d.email) c.email = d.email;
       if (!c.telefono && d.telefono) c.telefono = R.formattaTelefono(d.telefono);
-      R.registraStoria(c.id, null, 'modulo', `Ha compilato di nuovo il modulo (${pagina || campagna})${diversi.length ? ' · dati diversi da quelli salvati: ' + diversi.join(', ') + ' (non sovrascritti)' : ''}`, 'Modulo');
+      R.registraStoria(c.id, null, 'modulo', `Ha compilato di nuovo ${origine}${diversi.length ? ' · dati diversi da quelli salvati: ' + diversi.join(', ') + ' (non sovrascritti)' : ''}`, 'Modulo');
     } else {
       nuovo = true;
-      const resp = R.prossimoDiTurno();
+      const resp = azioni.responsabile === 'turno' ? R.prossimoDiTurno() : azioni.responsabile === 'nessuno' ? null : azioni.responsabile;
       c = {
         id: R.id('c'), nome: d.nome, referente: d.nome, ruoloReferente: '', telefono: d.telefono ? R.formattaTelefono(d.telefono) : '', altriTelefoni: [], email: d.email || '', altreEmail: [], piva: '', ateco: '', regione: '', dipendenti: '',
-        fonte: 'Landing', campagna, pagina, responsabile: resp, creato: R.adesso(), colore: 'salvia', etichette: [], nonLetti: 0,
+        fonte: d.fonte || 'Landing', campagna, pagina, responsabile: resp, creato: R.adesso(), colore: 'salvia', etichette: [], nonLetti: 0,
         consensi: { whatsapp: d.consensoWhatsapp ? 'si' : 'non-registrato', email: d.consensoEmail ? 'si' : 'non-registrato' },
       };
-      c.numeroUsato = resp === 'u3' ? 'n2' : resp ? 'n1' : 'n3';
+      c.numeroUsato = (R.stato.numeri.find((x) => x.utente && x.utente === resp) || R.stato.numeri.find((x) => x.predefinito) || R.stato.numeri[0]).id;
       R.stato.contatti.push(c);
-      R.registraStoria(c.id, null, 'modulo', `Modulo compilato dalla pagina ${pagina || campagna}`, 'Modulo');
+      R.registraStoria(c.id, null, 'modulo', `Arrivato ${daOrigine}`, 'Modulo');
     }
-    let affare = R.affariDelContatto(c.id).find((a) => a.percorso === 'p1' && a.stato === 'aperto');
+    if (risposteTxt) { c.risposte = Object.assign({}, c.risposte, d.risposte); R.registraStoria(c.id, null, 'modulo', 'Risposte: ' + risposteTxt, 'Modulo'); }
+    if (azioni.etichette) c.etichette = Array.from(new Set((c.etichette || []).concat(azioni.etichette.split(',').map((x) => x.trim()).filter(Boolean))));
+    if (d.regola) R.registraStoria(c.id, null, 'modulo', d.regola, 'Regole di qualificazione');
+    let affare = R.affariDelContatto(c.id).find((a) => a.percorso === percorsoId && a.stato === 'aperto');
     if (affare) {
       if (affare.responsabile) R.notifica(`<b>${R.esc(c.nome)}</b> ha compilato di nuovo il modulo: ha già un affare aperto`, '#/contatto/' + c.id, affare.responsabile);
     } else {
-      affare = { id: R.id('d'), contatto: c.id, percorso: 'p1', fase: 'f1', nome: (campagna || 'Nuova richiesta') + ' · da modulo', bando: campagna, valore: null, responsabile: c.responsabile, seguaci: [], creato: R.adesso(), stato: 'aperto', documenti: [], tentativi: [], faseCambiata: R.adesso() };
+      const fase = R.fase(percorsoId, faseId) || R.percorso(percorsoId).fasi[0];
+      affare = { id: R.id('d'), contatto: c.id, percorso: percorsoId, fase: fase.id, nome: (campagna || 'Nuova richiesta') + ' · da modulo', bando: campagna, valore: null, responsabile: c.responsabile, seguaci: [], creato: R.adesso(), stato: fase.tipo === 'perso' ? 'perso' : fase.tipo === 'vinto' ? 'vinto' : 'aperto', documenti: [], tentativi: [], faseCambiata: R.adesso() };
       R.stato.affari.push(affare);
-      const quando = R.aggiungiOreLavoro(1).toISOString();
-      R.stato.attivita.push({ id: R.id('t'), affare: affare.id, contatto: c.id, tipo: 'tel', titolo: 'Richiamare entro 1 ora di lavoro', quando, responsabile: c.responsabile, fatta: false, fattaAlle: null, annullata: false, perTuttiGliAmministratori: !c.responsabile });
-      if (c.responsabile) R.notifica(`Nuovo contatto: <b>${R.esc(c.nome)}</b> dalla pagina ${R.esc(campagna || pagina)}`, '#/contatto/' + c.id, c.responsabile);
-      if (!c.responsabile) R.notifica(`Nuovo contatto senza responsabile: <b>${R.esc(c.nome)}</b>`, '#/contatto/' + c.id, 'u1');
-      else R.notifica(`Nuovo contatto: <b>${R.esc(c.nome)}</b> dalla pagina ${R.esc(campagna || pagina)}`, '#/contatto/' + c.id, 'u1');
-      if (d.funnel) { const f = (R.stato.funnel || []).find((x) => x.id === d.funnel); if (f) f.contatti = (f.contatti || 0) + 1; }
-      R.avviaAutomazione('au1', { contatto: c.id, affare: affare.id, perche: 'modulo compilato' });
+      if (affare.stato === 'aperto' && azioni.promemoria !== 'no') {
+        const quando = R.aggiungiOreLavoro(1).toISOString();
+        R.stato.attivita.push({ id: R.id('t'), affare: affare.id, contatto: c.id, tipo: 'tel', titolo: 'Richiamare entro 1 ora di lavoro', quando, responsabile: c.responsabile, fatta: false, fattaAlle: null, annullata: false, perTuttiGliAmministratori: !c.responsabile });
+      }
+      const nomeFase = R.percorso(percorsoId).nome + ' · ' + fase.nome;
+      if (c.responsabile) R.notifica(`Nuovo contatto: <b>${R.esc(c.nome)}</b> ${R.esc(daOrigine)} · ${R.esc(nomeFase)}`, '#/contatto/' + c.id, c.responsabile);
+      if (!c.responsabile) R.notifica(`Nuovo contatto senza responsabile: <b>${R.esc(c.nome)}</b> · ${R.esc(nomeFase)}`, '#/contatto/' + c.id, 'u1');
+      else R.notifica(`Nuovo contatto: <b>${R.esc(c.nome)}</b> ${R.esc(daOrigine)} · ${R.esc(nomeFase)}`, '#/contatto/' + c.id, 'u1');
+      if (azioni.automazione !== 'nessuna' && affare.stato === 'aperto') R.avviaAutomazione(azioni.automazione, { contatto: c.id, affare: affare.id, perche: d.fonte && d.fonte !== 'Landing' ? 'contatto da ' + d.fonte : 'modulo compilato' });
     }
     R.salva();
-    return { contatto: c, affare, nuovo };
+    return { contatto: c, affare, nuovo, azioni };
   };
 
   /* ---------------- Spostare un affare di fase ---------------- */
@@ -721,6 +741,7 @@
           </div>
         </div>
         ${R.bannerWhatsApp ? R.bannerWhatsApp() : ''}
+        ${R.bannerMeta ? R.bannerMeta() : ''}
         ${senzaResp ? `<div class="banner giallo">${R.icona('persona')}<div class="principale"><b>${senzaResp} ${senzaResp === 1 ? 'contatto è' : 'contatti sono'} senza responsabile.</b> Li vedono solo gli amministratori finché non li assegni.</div><button class="btn piccolo" data-azione="vai" data-dove="#/contatti?filtro=senza">Assegna</button></div>` : ''}
         <div class="griglia" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr)" id="dash-r1">
           <div class="riquadro verde" style="min-height:270px">

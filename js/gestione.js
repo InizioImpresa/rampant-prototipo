@@ -243,6 +243,10 @@
       aggiungi({ id: 'au6', nome: 'Riattivazione contatti fermi', stato: 'bozza', passate: 0, inAttesa: 0, cartella: 'Marketing locale', descrizione: 'Nessuna risposta da 60 giorni' });
       s.automazioni.forEach(completaAutomazione);
     }
+    if (!e.meta) {
+      e.meta = metaIniziale();
+      if (s.notifiche && !s.notifiche.some((n) => n.id === 'no-meta1')) s.notifiche.unshift({ id: 'no-meta1', testo: 'Nuovo modulo Meta non collegato: <b>ZES 2026 – modulo verifica (copia 24/10)</b> · 3 contatti in attesa', link: '#/impostazioni/meta', per: 'u1', quando: fa(48), letta: false, azienda: 'Inizio Impresa' });
+    }
     e.pronta = 1;
   }
   R.estendiDati(estendi);
@@ -883,7 +887,7 @@
     q = q || {};
     switch (q.tipo) {
       case 'modulo': return q.modulo ? `Qualcuno compila il modulo ${q.modulo}` : 'Qualcuno compila un modulo';
-      case 'meta': return 'Arriva un contatto dai moduli di Facebook o Instagram' + (q.modulo ? ' · ' + q.modulo : '');
+      case 'meta': return q.modulo ? `Arriva un contatto dal modulo Meta «${q.modulo}»` : 'Arriva un contatto da un modulo di Facebook o Instagram';
       case 'fase': { const f = R.fase(q.percorso, q.fase); return `Un affare entra in «${f ? f.nome : 'una fase'}»`; }
       case 'etichetta': return `Il contatto riceve l'etichetta «${q.etichetta || '…'}»`;
       case 'appuntamento': return 'Il contatto prenota un appuntamento';
@@ -1364,7 +1368,13 @@
     let dettagli;
     switch (q.tipo) {
       case 'modulo': dettagli = gruppo('Quale modulo', scelta(`id="ge-q-modulo" ${c('modulo')}`, [['', 'Qualsiasi modulo']].concat((R.stato.funnel || []).map((f) => [f.nome, 'Modulo della pagina ' + f.nome])), q.modulo || ''), 'ge-q-modulo'); break;
-      case 'meta': dettagli = gruppo('Nome del modulo pubblicitario (facoltativo)', `<input class="campo" id="ge-q-meta" value="${R.esc(q.modulo || '')}" ${t('modulo')}>`, 'ge-q-meta'); break;
+      case 'meta': {
+        const nomi = ((ge().meta || {}).moduli || []).filter((m) => m.stato !== 'archiviato').map((m) => m.nome);
+        if (q.modulo && !nomi.includes(q.modulo)) nomi.push(q.modulo);
+        dettagli = gruppo('Quale modulo Meta', scelta(`id="ge-q-meta" ${c('modulo')}`, [['', 'Qualsiasi modulo della pagina']].concat(nomi.map((n) => [n, n])), q.modulo || ''), 'ge-q-meta')
+          + '<p class="piccolo secondario" style="margin-top:-6px">I moduli si collegano in Impostazioni → <a class="link verde" href="#/impostazioni/meta">Moduli Meta</a>.</p>';
+        break;
+      }
       case 'fase': dettagli = percorsoFase('quando', q); break;
       case 'etichetta': dettagli = gruppo('Etichetta', `<input class="campo" id="ge-q-et" value="${R.esc(q.etichetta || '')}" ${t('etichetta')}>`, 'ge-q-et'); break;
       case 'silenzio': dettagli = gruppo('Giorni senza risposta, contati dall\'ultimo messaggio inviato', `<input class="campo" type="number" min="1" id="ge-q-g" value="${q.giorni || 3}" ${t('giorni')}>`, 'ge-q-g'); break;
@@ -1948,6 +1958,7 @@
     { id: 'email', nome: 'Email', descr: 'Indirizzo e dominio di invio, firma, e l\'indirizzo per le risposte, che finiscono nella storia del contatto.' },
     { id: 'domini', nome: 'Domini', link: '#/marketing/domini' },
     { id: 'collegamenti', nome: 'Collegamenti esterni' },
+    { id: 'meta', nome: 'Moduli Meta' },
     { id: 'avvisi', nome: 'Avvisi', descr: 'Quali avvisi ricevono amministratori e collaboratori. Ognuno sceglie i propri canali (campanella, WhatsApp, email) in «Il mio profilo».' },
     { id: 'motivi', nome: 'Motivi di perdita' },
     { id: 'orario', nome: 'Orario di invio e festivi' },
@@ -2528,7 +2539,7 @@
     return [
       { id: 'waA', nome: 'WhatsApp · servizio A (principale)', semaforo: A[0], testo: A[1], ultima: ultima('provaA') },
       { id: 'waB', nome: 'WhatsApp · servizio B (riserva sullo stesso numero)', semaforo: B[0], testo: B[1], ultima: ultima('provaB') },
-    ].concat(ge().collegamenti);
+    ].concat(ge().collegamenti.map((c) => (c.id === 'meta' ? rigaMetaCollegamenti(c) : c)));
   }
   const SEMAFORO = { verde: ['salvia', 'Funziona'], giallo: ['pesca', 'Da controllare'], rosso: ['errore', 'Interrotto'], spento: ['', 'Non collegato'] };
   function sezCollegamenti() {
@@ -2538,7 +2549,7 @@
       <div class="elenco">${elenco.map((c) => `<div class="riga">
         <span class="ge-semaforo ${c.semaforo}" aria-hidden="true"></span>
         <div class="principale"><div class="titolo-riga">${R.esc(c.nome)} <span class="etichetta ${SEMAFORO[c.semaforo][0]}">${SEMAFORO[c.semaforo][1]}</span></div><div class="sotto">${R.esc(c.testo)} · ultima prova riuscita: ${c.ultima ? R.esc(quandoMinuscolo(c.ultima)) : 'mai'}</div></div>
-        <button class="btn piccolo ${c.semaforo === 'rosso' ? 'rosso' : 'secondario-campo'}" data-azione="ge-collegamento" data-id="${c.id}">${c.semaforo === 'spento' ? 'Collega' : c.semaforo === 'verde' ? 'Prova ora' : 'Ricollega'}</button>
+        <button class="btn piccolo ${c.semaforo === 'rosso' ? 'rosso' : 'secondario-campo'}" data-azione="ge-collegamento" data-id="${c.id}">${c.id === 'meta' ? 'Gestisci' : c.semaforo === 'spento' ? 'Collega' : c.semaforo === 'verde' ? 'Prova ora' : 'Ricollega'}</button>
       </div>`).join('')}</div></div>`;
   }
   const ISTRUZIONI = {
@@ -2550,6 +2561,7 @@
   R.azioni['ge-collegamento'] = (el) => {
     const id = el.dataset.id;
     if (id === 'waA' || id === 'waB') { R.vai('#/whatsapp'); return; }
+    if (id === 'meta') { R.vai('#/impostazioni/meta'); return; }
     const c = ge().collegamenti.find((x) => x.id === id);
     if (!c) return;
     if (c.semaforo === 'verde') {
@@ -2737,7 +2749,7 @@
       <div class="elenco">${create.map((a) => { const pa = a.primoAvvio; const saltati = Object.values(pa.stati).filter((x) => x === 'saltato').length; return `<div class="riga"><span class="quadratino" style="background:${R.esc(a.colore)};color:#fff">${R.esc(sigla(a))}</span><div class="principale"><div class="titolo-riga">${R.esc(a.nome)}</div><div class="sotto">${pa.completato ? `finito${saltati ? ` · ${plurale(saltati, 'passo saltato', 'passi saltati')}` : ''}` : `al passo ${pa.passo} di 8`}</div></div><a class="btn piccolo secondario-campo" href="#/aziende/nuova?id=${a.id}${pa.completato ? '&passo=fine' : ''}">${pa.completato ? 'Riepilogo' : 'Riprendi'}</a></div>`; }).join('') || '<div class="vuoto">Nessuna azienda creata con il primo avvio.</div>'}</div>
       <a class="btn primario spazio-sopra" href="#/aziende/nuova">${R.icona('piu')} Nuova azienda per un cliente</a>` : ''}</div>`;
   }
-  const SEZ = { utenti: sezUtenti, aziende: sezAziende, percorsi: sezPercorsi, collegamenti: sezCollegamenti, orario: sezOrario, motivi: sezMotivi, stop: sezStop, prefisso: sezPrefisso, registro: sezRegistro, 'primo-avvio': sezPrimoAvvio };
+  const SEZ = { utenti: sezUtenti, aziende: sezAziende, percorsi: sezPercorsi, collegamenti: sezCollegamenti, meta: (s) => sezMeta(s), orario: sezOrario, motivi: sezMotivi, stop: sezStop, prefisso: sezPrefisso, registro: sezRegistro, 'primo-avvio': sezPrimoAvvio };
 
   /* ================= PRIMO AVVIO GUIDATO DI UNA NUOVA AZIENDA (capitolo 12, percorso 8) ================= */
   const MODELLI_SETTORE = {
@@ -3102,6 +3114,422 @@
     az.accordoAccettato = true;
     registra(`Il cliente di ${az.nome} ha accettato l'accordo sul trattamento dei dati`);
     R.salva(); R.aggiorna(); R.avviso('Accordo accettato (simulato): ora si può pubblicare e inviare');
+  };
+
+  /* ================= MODULI META (Lead Ads) — DECISIONI.md 6-bis, 24/10/2026 =================
+     Rampant riceve i contatti di TUTTI i moduli della pagina: un modulo nuovo non collegato non perde contatti,
+     li tiene in attesa e fa comparire un avviso. Offre alla Dashboard: R.bannerMeta(). */
+  R.stile('gestione-meta', `
+    .ge-meta-pagina { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--spazio); }
+    .ge-meta-pagina .riga-impostazione { background: var(--bianco); border-radius: 18px; }
+    .ge-meta-modulo { border-top: 1px solid var(--linea); padding: 16px 0; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.6fr) minmax(0, 1fr) 196px; gap: 16px; align-items: center; }
+    .ge-meta-modulo:first-child { border-top: 0; padding-top: 4px; }
+    .ge-meta-modulo .titolo-riga { font-weight: 600; font-size: 15px; }
+    .ge-meta-modulo .sotto { font-size: 12.5px; color: var(--testo-2); }
+    .ge-meta-modulo .dida { display: block; font-size: 11.5px; color: var(--testo-2); margin-bottom: 2px; }
+    .ge-meta-modulo.archiviato { opacity: .62; }
+    .ge-meta-modulo .azioni { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .ge-abbina { display: grid; grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr); gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--linea); font-size: 13.5px; }
+    .ge-abbina:last-child { border-bottom: 0; }
+    .ge-abbina .campo { min-height: 40px; }
+    .ge-meta-esito { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--linea); }
+    .ge-meta-esito:last-child { border-bottom: 0; }
+    @media (max-width: 1180px) { .ge-meta-modulo { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .ge-meta-modulo .azioni { justify-content: flex-start; } }
+    @media (max-width: 767px) { .ge-meta-modulo, .ge-meta-pagina, .ge-abbina { grid-template-columns: minmax(0, 1fr); } .ge-abbina .freccia { display: none; } .ge-meta-esito { grid-template-columns: minmax(0, 1fr); } }
+  `);
+  const faMin = (min) => new Date(Date.now() - min * 60000).toISOString();
+  function domandeZes(conPagatore) {
+    return [
+      { chiave: 'nome', etichetta: 'Nome e cognome', anagrafica: 'nome' },
+      { chiave: 'telefono', etichetta: 'Numero di telefono', anagrafica: 'telefono' },
+      { chiave: 'email', etichetta: 'Email', anagrafica: 'email' },
+      { chiave: 'impresa', etichetta: 'Hai già un\'impresa?', risposte: ['Sì', 'No, la sto aprendo'] },
+      { chiave: 'investimento', etichetta: 'Quanto vuoi investire?', risposte: ['Meno di 100.000 €', 'Da 100.000 a 500.000 €', 'Oltre 500.000 €'] },
+    ].concat(conPagatore === false ? [] : [{ chiave: 'pagatore', etichetta: 'Hai segnalazioni come cattivo pagatore?', risposte: ['No', 'Sì'] }]);
+  }
+  const PREDEFINITE_META = () => ({ fase: 'p1|f1', responsabile: 'turno', automazione: 'au1', etichette: '', promemoria: 'si' });
+  function metaIniziale() {
+    const g = R.giorniDa;
+    const lead = (nome, tel, risposte, min, fonte) => ({ id: R.id('ld'), nome, telefono: tel, email: nome.toLowerCase().replace(/[^a-z]+/g, '.') + '@esempio.it', fonte: fonte || 'Facebook', consensoWA: true, consensoEmail: false, risposte, quando: faMin(min) });
+    return {
+      pagina: 'Inizio Impresa – Finanza agevolata', idPagina: '104857362918274', semaforo: 'verde', ultimaProva: faMin(12), bm: 'verificato', app: 'revisione',
+      autoCollega: { attivo: false, daModulo: null },
+      moduli: [
+        { id: 'mm1', nome: 'ZES 2026 – modulo verifica (ottobre)', codice: '1084729365520194', stato: 'collegato', creato: g(-23, '10:00'), campagna: 'ZES 2026', domande: domandeZes(),
+          abbinamenti: { impresa: 'storia', investimento: 'campo:Investimento previsto', pagatore: 'storia' }, consensoWA: 'casella', consensoEmail: 'casella', predefinite: PREDEFINITE_META(),
+          regole: [
+            { id: 'rg-mm1-1', modo: 'tutte', condizioni: [{ domanda: 'pagatore', operatore: 'uguale', valore: 'Sì' }], azioni: { fase: 'p1|f6', etichette: 'non finanziabile', automazione: 'nessuna', promemoria: 'no' } },
+            { id: 'rg-mm1-2', modo: 'tutte', condizioni: [{ domanda: 'investimento', operatore: 'uguale', valore: 'Oltre 500.000 €' }], azioni: { responsabile: 'u1', etichette: 'alto valore' } },
+          ],
+          contattiMeta: 46, ricevuti: 46, ultimo: faMin(140), inAttesa: [] },
+        { id: 'mm2', nome: 'Resto al Sud 2.0 – modulo giovani', codice: '2219034718846602', stato: 'collegato', creato: g(-40, '09:30'), campagna: 'Resto al Sud',
+          domande: [{ chiave: 'nome', etichetta: 'Nome e cognome', anagrafica: 'nome' }, { chiave: 'telefono', etichetta: 'Numero di telefono', anagrafica: 'telefono' }, { chiave: 'email', etichetta: 'Email', anagrafica: 'email' },
+            { chiave: 'eta', etichetta: 'Quanti anni hai?', risposte: ['18–35', '36–55', 'Più di 55'] }, { chiave: 'regione', etichetta: 'In quale regione vuoi aprire?', risposte: ['Campania', 'Puglia', 'Calabria', 'Sicilia', 'Altra regione'] }],
+          abbinamenti: { eta: 'storia', regione: 'campo:Regione' }, consensoWA: 'casella', consensoEmail: 'casella', predefinite: Object.assign(PREDEFINITE_META(), { responsabile: 'u3' }),
+          regole: [{ id: 'rg-mm2-1', modo: 'tutte', condizioni: [{ domanda: 'eta', operatore: 'uguale', valore: 'Più di 55' }], azioni: { etichette: 'verificare i requisiti di età' } }],
+          contattiMeta: 28, ricevuti: 28, ultimo: faMin(60 * 26), inAttesa: [] },
+        { id: 'mm3', nome: 'ZES 2026 – modulo verifica (copia 24/10)', codice: '1093318842267715', stato: 'non-collegato', creato: faMin(55), campagna: 'ZES 2026', domande: domandeZes(), simileA: 'mm1',
+          abbinamenti: {}, consensoWA: 'casella', consensoEmail: 'casella', predefinite: null, regole: [], contattiMeta: 3, ricevuti: 0, ultimo: faMin(9),
+          inAttesa: [
+            lead('Davide Esposito', '+39 333 410 2281', { impresa: 'Sì', investimento: 'Da 100.000 a 500.000 €', pagatore: 'No' }, 41),
+            lead('Rosaria Ferraro', '+39 347 552 8013', { impresa: 'Sì', investimento: 'Oltre 500.000 €', pagatore: 'No' }, 22, 'Instagram'),
+            lead('Gennaro Vitale', '+39 338 760 1946', { impresa: 'No, la sto aprendo', investimento: 'Meno di 100.000 €', pagatore: 'Sì' }, 9),
+          ] },
+        { id: 'mm4', nome: 'ZES 2026 – modulo (settembre)', codice: '9902184473310051', stato: 'archiviato', creato: g(-55, '10:00'), campagna: 'ZES 2026', domande: domandeZes(false),
+          abbinamenti: { impresa: 'storia', investimento: 'campo:Investimento previsto' }, consensoWA: 'casella', consensoEmail: 'casella', predefinite: PREDEFINITE_META(), regole: [], contattiMeta: 61, ricevuti: 61, ultimo: g(-24, '18:40'), inAttesa: [] },
+      ],
+    };
+  }
+  const meta = () => prepara().meta;
+  const moduloMeta = (id) => meta().moduli.find((m) => m.id === id);
+  const domandeRegole = (m) => m.domande.filter((d) => !d.anagrafica).map((d) => ({ chiave: d.chiave, etichetta: d.etichetta, risposte: d.risposte || [] }));
+  const codiceLeggibile = (c) => String(c).replace(/(\d{4})(?=\d)/g, '$1 ');
+  const nonCollegati = () => meta().moduli.filter((m) => m.stato === 'non-collegato');
+  const tuttiAmministratori = () => R.stato.utenti.filter((u) => ['generale', 'azienda'].includes(u.ruolo) && u.stato === 'attivo').map((u) => u.id);
+  const ETICHETTA_STATO_META = { collegato: ['salvia', 'Collegato'], 'non-collegato': ['errore', 'Non collegato'], archiviato: ['', 'Archiviato in Meta'] };
+
+  /* Fa entrare un contatto di un modulo collegato, con le sue regole di qualificazione. */
+  function entraLead(m, l) {
+    const risposte = {}, testi = {};
+    m.domande.filter((d) => !d.anagrafica).forEach((d) => { const v = (l.risposte || {})[d.chiave]; if (v != null && v !== '') { risposte[d.chiave] = v; testi[d.etichetta] = v; } });
+    const e = R.applicaRegole(m.regole || [], risposte, Object.assign(PREDEFINITE_META(), m.predefinite || {}));
+    const descr = R.descriviAzioni(e.azioni);
+    const r = R.nuovoContattoDaModulo({
+      nome: l.nome, telefono: l.telefono, email: l.email,
+      consensoWhatsapp: m.consensoWA === 'casella' && !!l.consensoWA, consensoEmail: m.consensoEmail === 'casella' && !!l.consensoEmail,
+      campagna: m.campagna || '', pagina: '', fonte: l.fonte || 'Facebook', moduloMeta: m.nome, risposte: testi, azioni: e.azioni,
+      regola: e.numero ? `Regola ${e.numero} del modulo Meta «${m.nome}»: ${descr}` : `Nessuna regola corrisponde: impostazioni predefinite del modulo Meta «${m.nome}» (${descr})`,
+    });
+    Object.entries(m.abbinamenti || {}).forEach(([k, dest]) => {
+      if (risposte[k] == null || !r || !r.contatto) return;
+      const d = m.domande.find((x) => x.chiave === k);
+      const nomeCampo = dest === 'nuovo' ? (d ? d.etichetta : k) : dest.startsWith('campo:') ? dest.slice(6) : null;
+      if (!nomeCampo) return;
+      r.contatto.campi = Object.assign({}, r.contatto.campi, { [nomeCampo]: risposte[k] });
+      if (nomeCampo === 'Regione' && !r.contatto.regione) r.contatto.regione = risposte[k];
+    });
+    m.ultimo = R.adesso();
+    R.salva();
+    return { r, e, descr, lead: l };
+  }
+  function rigaMetaCollegamenti(c) {
+    const me = meta();
+    const attesa = nonCollegati();
+    const n = attesa.reduce((s, m) => s + m.inAttesa.length, 0);
+    let semaforo, testo;
+    if (me.semaforo !== 'verde') { semaforo = 'rosso'; testo = 'La pagina Facebook non risponde: ricollegala'; }
+    else if (attesa.length) { semaforo = 'giallo'; testo = `${plurale(attesa.length, 'modulo nuovo non collegato', 'moduli nuovi non collegati')}${n ? ' · ' + plurale(n, 'contatto', 'contatti') + ' in attesa' : ''}`; }
+    else if (me.app !== 'approvata') { semaforo = 'giallo'; testo = `Pagina «${me.pagina}» collegata · app in revisione da Meta: intanto i contatti arrivano con il ripiego (Pabbly)`; }
+    else { semaforo = 'verde'; testo = `Pagina «${me.pagina}» collegata · ${plurale(me.moduli.filter((m) => m.stato === 'collegato').length, 'modulo collegato', 'moduli collegati')}`; }
+    return Object.assign({}, c, { nome: 'Moduli pubblicitari Meta (Facebook e Instagram)', semaforo, testo, ultima: me.ultimaProva });
+  }
+  /* Banner per la Dashboard (solo amministratori): modulo Meta nuovo non collegato. */
+  R.bannerMeta = () => {
+    if (!R.stato || !R.stato.utenti || !R.amministratore()) return '';
+    prepara();
+    return nonCollegati().map((m) => {
+      const n = m.inAttesa.length;
+      const titolo = m.collegatoIl ? 'Modulo Meta scollegato' : 'Nuovo modulo Meta non collegato';
+      return `<div class="banner ${n ? 'rosso' : 'giallo'}">${R.icona('social')}<div class="principale"><b>${titolo}: «${R.esc(m.nome)}»${n ? ` · ${plurale(n, 'contatto', 'contatti')} in attesa` : ''}.</b> ${n ? 'Collegalo per farli entrare: nessun contatto va perso.' : 'Collegalo: se nel frattempo arrivano contatti restano in attesa, nessuno va perso.'}</div><button class="btn piccolo ${n ? 'rosso' : ''}" data-azione="ge-meta-collega" data-id="${m.id}">Collega</button></div>`;
+    }).join('');
+  };
+
+  let simMeta = { modulo: 'mm1', ultimo: null };
+  function sezMeta() {
+    const me = meta();
+    const auto = me.autoCollega.attivo ? moduloMeta(me.autoCollega.daModulo) : null;
+    const daControllare = me.moduli.filter((m) => m.collegatoDa === 'auto' && !m.controllato);
+    const moduli = me.moduli.slice().sort((a, b) => ({ 'non-collegato': 0, collegato: 1, archiviato: 2 }[a.stato] - { 'non-collegato': 0, collegato: 1, archiviato: 2 }[b.stato]));
+    const rigaModulo = (m) => {
+      const et = ETICHETTA_STATO_META[m.stato];
+      const ok = m.ricevuti === m.contattiMeta;
+      const dove = m.stato === 'collegato' ? `${R.esc(R.descriviAzioni(Object.assign(PREDEFINITE_META(), m.predefinite || {})))}${(m.regole || []).length ? ` · <b>${plurale(m.regole.length, 'regola', 'regole')} di qualificazione</b>` : ''}`
+        : m.stato === 'non-collegato' ? `<b style="color:var(--errore-t)">Da nessuna parte: ${m.inAttesa.length ? 'i contatti restano in attesa' : 'i prossimi contatti resteranno in attesa'}</b>` : 'Non riceve più contatti';
+      const azioni = m.stato === 'collegato' ? `<button class="btn piccolo secondario-campo" data-azione="ge-meta-collega" data-id="${m.id}">Modifica</button><button class="btn piccolo secondario-campo" data-azione="ge-meta-scollega" data-id="${m.id}">Scollega</button>`
+        : m.stato === 'non-collegato' ? `<button class="btn piccolo ${m.inAttesa.length ? 'rosso' : 'primario'}" data-azione="ge-meta-collega" data-id="${m.id}">Collega</button>` : '';
+      return `<div class="ge-meta-modulo ${m.stato}">
+        <div><div class="titolo-riga">${R.esc(m.nome)}</div><div class="sotto">Codice ${codiceLeggibile(m.codice)}</div>
+          <div class="riga-flex" style="gap:6px;margin-top:6px"><span class="etichetta ${et[0]}"><span class="puntino"></span>${et[1]}</span>${m.collegatoDa === 'auto' ? '<span class="etichetta lavanda">collegato da solo</span>' : ''}</div></div>
+        <div><span class="dida">Dove manda i contatti</span><span style="font-size:13.5px">${dove}</span></div>
+        <div><span class="dida">Contatti arrivati</span><b>${m.ricevuti}</b>${m.ultimo ? ` <span class="piccolo secondario">· ultimo ${R.esc(quandoMinuscolo(m.ultimo))}</span>` : ''}
+          <div style="margin-top:6px"><span class="etichetta ${ok ? 'salvia' : 'errore'}">Ricevuti in Rampant ${m.ricevuti} su ${m.contattiMeta} in Meta</span></div></div>
+        <div class="azioni">${azioni}</div>
+      </div>`;
+    };
+    const sim = moduloMeta(simMeta.modulo) && moduloMeta(simMeta.modulo).stato !== 'archiviato' ? moduloMeta(simMeta.modulo) : me.moduli.find((m) => m.stato !== 'archiviato');
+    const u = simMeta.ultimo;
+    return `${R.bannerMeta()}
+      ${daControllare.map((m) => `<div class="banner giallo">${R.icona('social')}<div class="principale"><b>Modulo nuovo collegato da solo: «${R.esc(m.nome)}».</b> Ha preso le impostazioni di «${R.esc((moduloMeta(m.copiatoDa) || {}).nome || 'un altro modulo')}»: controlla che vadano bene.</div><button class="btn piccolo" data-azione="ge-meta-collega" data-id="${m.id}">Controlla</button><button class="btn piccolo" data-azione="ge-meta-controllato" data-id="${m.id}">Va bene così</button></div>`).join('')}
+      <div class="riquadro">
+        <div class="intestazione-riquadro"><h2 class="titolo-riquadro">Moduli Meta</h2><span class="etichetta ${me.semaforo === 'verde' ? 'salvia' : 'errore'}"><span class="puntino"></span>${me.semaforo === 'verde' ? 'Pagina collegata' : 'Pagina da ricollegare'}</span></div>
+        <p class="secondario" style="margin-top:-6px">I contatti dei moduli pubblicitari di Facebook e Instagram entrano qui da soli, senza Pabbly né Bitrix. Rampant riceve i contatti di tutti i moduli della pagina: se in Meta nasce un modulo nuovo, te lo segnala e nessun contatto va perso.</p>
+        <div class="ge-meta-pagina">
+          <div class="riquadro medio beige">
+            <div class="riga-flex" style="flex-wrap:nowrap;align-items:flex-start"><span class="ge-semaforo ${me.semaforo === 'verde' ? 'verde' : 'rosso'}" style="margin-top:5px" aria-hidden="true"></span><div style="min-width:0"><div class="grassetto">${R.esc(me.pagina)}</div><div class="piccolo secondario">Pagina Facebook · codice ${codiceLeggibile(me.idPagina)} · ultima prova riuscita ${R.esc(quandoMinuscolo(me.ultimaProva))}</div></div></div>
+            <div class="riga-flex spazio-sopra"><button class="btn piccolo" data-azione="ge-meta-ricollega">${R.icona('ricarica', 16)} Ricollega</button><button class="btn piccolo" data-azione="ge-meta-prova-pagina">Prova ora</button></div>
+          </div>
+          <div class="riquadro medio beige">
+            <div class="riga-impostazione"><span>Business Manager di Meta</span><span class="etichetta salvia">Verificato</span></div>
+            <div class="riga-impostazione"><span>App Rampant</span><span class="etichetta ${me.app === 'approvata' ? 'salvia' : 'pesca'}">${me.app === 'approvata' ? 'Approvata da Meta' : 'In revisione da Meta'}</span></div>
+            <p class="piccolo secondario" style="margin:6px 4px 0">${me.app === 'approvata' ? 'I contatti arrivano direttamente da Meta, in pochi secondi.' : 'Finché Meta non approva l\'app, i contatti arrivano con il ripiego (Pabbly, Zapier o Make) e li vedi qui lo stesso. Nel prototipo il collegamento diretto è simulato.'}</p>
+          </div>
+        </div>
+        <div class="riga-impostazione spazio-sopra" style="border-radius:20px"><span><b>Moduli nuovi della pagina</b><br><span class="piccolo secondario">${auto ? `Si collegano da soli con le impostazioni di «${R.esc(auto.nome)}». Ti avvisiamo per un controllo.` : 'Restano in attesa finché non li colleghi: ti avvisiamo subito e i contatti non si perdono.'}</span></span>${auto ? '<button class="btn piccolo" style="background:#fff" data-azione="ge-meta-auto-spegni">Spegni</button>' : ''}</div>
+      </div>
+      <div class="riquadro spazio-sopra">
+        <div class="intestazione-riquadro"><h2 class="titolo-riquadro">Moduli della pagina</h2><span class="secondario piccolo">${plurale(me.moduli.filter((m) => m.stato === 'collegato').length, 'collegato', 'collegati')} · ${plurale(nonCollegati().length, 'da collegare', 'da collegare')}</span></div>
+        <div>${moduli.map(rigaModulo).join('')}</div>
+      </div>
+      <div class="riquadro tratteggiato spazio-sopra" id="ge-meta-sim">
+        <div class="intestazione-riquadro"><h2 class="titolo-riquadro piccolo">Prova del prototipo</h2><span class="etichetta">solo nel prototipo</span></div>
+        <p class="secondario" style="margin-top:-6px">Simula un contatto che compila un modulo su Facebook o Instagram: scegli le risposte oppure lasciale a caso e guarda dove lo mandano le regole.</p>
+        <div class="griglia g-3">
+          ${gruppo('Modulo', scelta('id="ge-ms-modulo" data-cambia="ge-meta-sim-modulo"', me.moduli.filter((m) => m.stato !== 'archiviato').map((m) => [m.id, m.nome + (m.stato === 'collegato' ? '' : ' (non collegato)')]), sim.id), 'ge-ms-modulo')}
+          ${gruppo('Arriva da', scelta('id="ge-ms-fonte" name="fonte"', [['Facebook', 'Facebook'], ['Instagram', 'Instagram']], 'Facebook'), 'ge-ms-fonte')}
+          ${domandeRegole(sim).map((d) => gruppo(R.esc(d.etichetta), scelta(`id="ge-ms-${d.chiave}" name="ms_${d.chiave}"`, [['', 'A caso']].concat(d.risposte.map((x) => [x, x])), ''), 'ge-ms-' + d.chiave)).join('')}
+        </div>
+        <div class="riga-flex">
+          <button class="btn primario" data-azione="ge-meta-sim">Simula: arriva un contatto da Meta</button>
+          <button class="btn" data-azione="ge-meta-nuovo-modulo">Simula: in Meta nasce un modulo nuovo</button>
+          <button class="btn" data-azione="ge-meta-app">${me.app === 'approvata' ? 'Simula: app di nuovo in revisione' : 'Simula: Meta approva l\'app'}</button>
+        </div>
+        ${u ? `<div class="riquadro medio beige spazio-sopra"><div class="piccolo secondario">Ultimo contatto simulato</div>
+          <div class="grassetto" style="margin:2px 0">${R.esc(u.nome)} · ${R.esc(u.modulo)}</div>
+          <div style="font-size:13.5px">${u.attesa ? 'Modulo non collegato: è in attesa, entrerà quando lo colleghi.' : `${u.numero ? 'Regola ' + u.numero : 'Nessuna regola: impostazioni predefinite'} → ${R.esc(u.descr)}`}</div>
+          ${u.contatto ? `<a class="link verde" href="#/contatto/${u.contatto}">Apri il contatto</a>` : ''}</div>` : ''}
+      </div>`;
+  }
+
+  /* ---------- Finestra «Collega modulo» (anche «Modifica») ---------- */
+  let bozzaMeta = null;
+  const CAMPI_META = [['storia', 'Salva solo nella storia'], ['campo:Bando di interesse', 'Campo «Bando di interesse»'], ['campo:Investimento previsto', 'Campo «Investimento previsto»'], ['campo:Regione', 'Campo «Regione»'], ['nuovo', 'Nuovo campo personalizzato']];
+  function predefiniteDalForm() {
+    const f = R.modaleAperta();
+    if (!f) return PREDEFINITE_META();
+    const v = R.valori(f);
+    return { fase: v.pd_fase || 'p1|f1', responsabile: v.pd_resp || 'turno', automazione: v.pd_auto || 'au1', etichette: v.pd_et || '', promemoria: v.pd_prom || 'si' };
+  }
+  function finestraCollegaMeta(m) {
+    if (!m || m.stato === 'archiviato') return;
+    const me = meta();
+    const nuovo = m.stato !== 'collegato';
+    const simile = nuovo && m.simileA ? moduloMeta(m.simileA) : null;
+    const origine = m.predefinite ? m : simile && simile.predefinite ? simile : null;
+    bozzaMeta = { id: m.id, regole: clona((origine && origine.regole) || []).map((r) => Object.assign(r, { id: R.id('rg') })) };
+    const pd = Object.assign(PREDEFINITE_META(), (origine || {}).predefinite || {});
+    const abb = Object.assign({}, (origine || {}).abbinamenti, m.abbinamenti);
+    const autoAcceso = nuovo ? true : me.autoCollega.attivo && me.autoCollega.daModulo === m.id;
+    const fasi = [];
+    R.stato.percorsi.forEach((p) => p.fasi.forEach((f) => fasi.push([p.id + '|' + f.id, p.nome + ' · ' + f.nome])));
+    const persone = R.stato.utenti.filter((x) => x.stato === 'attivo');
+    const autos = R.stato.automazioni.filter((a) => !a.eliminata);
+    const n = m.inAttesa.length;
+    const righe = m.domande.map((d) => (d.anagrafica
+      ? `<div class="ge-abbina"><span>${R.esc(d.etichetta)}</span><span class="freccia secondario">${R.icona('freccia', 16)}</span><span><b>${{ nome: 'Nome', telefono: 'Telefono (con prefisso)', email: 'Email' }[d.anagrafica]}</b> <span class="etichetta salvia">riconosciuto da solo</span></span></div>`
+      : `<div class="ge-abbina"><label for="ge-ab-${d.chiave}">${R.esc(d.etichetta)}</label><span class="freccia secondario">${R.icona('freccia', 16)}</span>${scelta(`id="ge-ab-${d.chiave}" name="ab_${d.chiave}"`, CAMPI_META.map(([v, t]) => [v, v === 'nuovo' ? `${t} «${d.etichetta}»` : t]), abb[d.chiave] || 'storia')}</div>`)).join('');
+    const titoletto = (t) => `<h3 class="titolo-riquadro piccolo" style="margin:20px 0 8px">${t}</h3>`;
+    const corpo = `
+      ${simile && nuovo && !m.predefinite ? `<div class="banner ge-banner-info">${R.icona('copia')}<div class="principale">Ha le stesse domande di «${R.esc(simile.nome)}»: abbiamo già copiato le sue impostazioni e le sue regole. Controlla e conferma.</div></div>` : ''}
+      ${n ? `<div class="banner giallo">${R.icona('persone')}<div class="principale"><b>${plurale(n, 'contatto è in attesa', 'contatti sono in attesa')}.</b> Alla conferma entrano subito, con le impostazioni e le regole qui sotto.</div></div>` : ''}
+      <div class="riga-impostazione"><span>Azienda</span><span class="valore">${R.esc(R.azienda().nome)}</span></div>
+      <div class="riga-impostazione"><label for="ge-mc-camp">Campagna (per «Da dove arrivano»)</label><input class="campo" id="ge-mc-camp" name="campagna" value="${R.esc(m.campagna || '')}" style="max-width:220px;min-height:38px;background-color:#fff"></div>
+      ${titoletto('Abbinamento delle domande')}
+      <div>${righe}</div>
+      ${titoletto('Consenso')}
+      <p class="piccolo secondario" style="margin-top:-4px">Il modulo Meta ha l'informativa privacy obbligatoria e due caselle facoltative: «Accetto di essere contattato su WhatsApp» e «… per email». Senza la casella il consenso resta «Non registrato».</p>
+      <div class="griglia g-2">${gruppo('WhatsApp', scelta('id="ge-mc-wa" name="cWA"', [['casella', 'Sì se ha spuntato la casella'], ['non-registrato', 'Sempre «Non registrato»']], m.consensoWA || 'casella'), 'ge-mc-wa')}${gruppo('Email', scelta('id="ge-mc-em" name="cEm"', [['casella', 'Sì se ha spuntato la casella'], ['non-registrato', 'Sempre «Non registrato»']], m.consensoEmail || 'casella'), 'ge-mc-em')}</div>
+      ${titoletto('Dove vanno i contatti (impostazioni predefinite)')}
+      <div class="griglia g-2">
+        ${gruppo('Percorso e fase', scelta('id="ge-pd-fase" name="pd_fase"', fasi, pd.fase), 'ge-pd-fase')}
+        ${gruppo('Responsabile', scelta('id="ge-pd-resp" name="pd_resp"', [['turno', 'A turno'], ['nessuno', 'Nessuno: lo assegnano gli amministratori']].concat(persone.map((x) => [x.id, x.nome])), pd.responsabile), 'ge-pd-resp')}
+        ${gruppo('Automazione', scelta('id="ge-pd-auto" name="pd_auto"', [['nessuna', 'Nessuna']].concat(autos.map((a) => [a.id, a.nome])), pd.automazione), 'ge-pd-auto')}
+        ${gruppo('Promemoria «richiamare entro 1 ora»', scelta('id="ge-pd-prom" name="pd_prom"', [['si', 'Sì'], ['no', 'No']], pd.promemoria), 'ge-pd-prom')}
+        ${gruppo('Etichetta (facoltativa)', `<input class="campo" id="ge-pd-et" name="pd_et" value="${R.esc(pd.etichette || '')}" placeholder="es. ZES ottobre">`, 'ge-pd-et')}
+      </div>
+      ${titoletto('Regole di qualificazione')}
+      <p class="piccolo secondario" style="margin-top:-4px">Se il contatto risponde così, mandalo lì. Vale la prima regola che corrisponde; altrimenti valgono le impostazioni predefinite qui sopra.</p>
+      ${R.editorRegole({ chiave: 'ge-meta-' + m.id, regole: bozzaMeta.regole, domande: domandeRegole(m), alCambio: (r) => { if (bozzaMeta) bozzaMeta.regole = r; }, predefinite: predefiniteDalForm })}
+      <div id="ge-meta-prova-regole"></div>
+      <div class="riga-impostazione spazio-sopra" style="border-radius:20px"><span><b>Collega automaticamente i nuovi moduli di questa pagina con queste impostazioni</b><br><span class="piccolo secondario">Se modifichi il modulo in Meta e ne nasce uno nuovo, i contatti entrano lo stesso. Ti avvisiamo comunque per un controllo.</span></span>${interruttore('name="auto" aria-label="Collega automaticamente i nuovi moduli"', autoAcceso)}</div>`;
+    R.modale({
+      titolo: `${nuovo ? 'Collega' : 'Modifica'} «${R.esc(m.nome)}»`,
+      sottotitolo: `Codice del modulo ${codiceLeggibile(m.codice)} · pagina ${R.esc(me.pagina)}`,
+      classe: 'larga',
+      proteggi: true,
+      corpo,
+      alChiudere: () => { bozzaMeta = null; },
+      pulsanti: [{ testo: 'Annulla', chiudi: true }, { testo: nuovo ? (n ? `Collega e fai entrare ${plurale(n, 'contatto', 'contatti')}` : 'Collega') : 'Salva', classe: 'primario', fai: (f) => salvaCollegamentoMeta(m, f) }],
+    });
+  }
+  function salvaCollegamentoMeta(m, f) {
+    if (!bozzaMeta) return false;
+    const incompleta = bozzaMeta.regole.findIndex((r) => !(r.condizioni || []).some((c) => c.domanda && (['compilato', 'vuoto'].includes(c.operatore) || String(c.valore || '').trim())));
+    if (incompleta >= 0) { R.avviso(`La regola ${incompleta + 1} non ha una condizione completa: scegli domanda e risposta, oppure eliminala`); return false; }
+    if (!R.serveConnessione('il collegamento del modulo')) return false;
+    const v = R.valori(f);
+    const me = meta();
+    const prima = m.stato;
+    m.abbinamenti = {};
+    m.domande.filter((d) => !d.anagrafica).forEach((d) => { m.abbinamenti[d.chiave] = v['ab_' + d.chiave] || 'storia'; });
+    m.consensoWA = v.cWA; m.consensoEmail = v.cEm; m.campagna = v.campagna;
+    m.predefinite = predefiniteDalForm();
+    m.regole = clona(bozzaMeta.regole);
+    m.stato = 'collegato';
+    if (prima !== 'collegato') m.collegatoIl = R.adesso();
+    m.controllato = true;
+    if (v.auto) me.autoCollega = { attivo: true, daModulo: m.id };
+    else if (me.autoCollega.daModulo === m.id) me.autoCollega = { attivo: false, daModulo: null };
+    const esiti = m.inAttesa.splice(0).map((l) => entraLead(m, l));
+    m.ricevuti += esiti.length;
+    (R.stato.notifiche || []).forEach((no) => { if (no.link === '#/impostazioni/meta' && no.testo.includes(m.nome)) no.letta = true; });
+    registra(`Ha ${prima === 'collegato' ? 'modificato' : 'collegato'} il modulo Meta «${m.nome}»${esiti.length ? ` (entrati ${esiti.length} contatti in attesa)` : ''}`);
+    bozzaMeta = null;
+    R.salva(); R.aggiorna();
+    if (!esiti.length) { R.avviso(prima === 'collegato' ? 'Impostazioni del modulo salvate' : 'Modulo collegato: i prossimi contatti entrano da soli'); return; }
+    R.modale({
+      titolo: `Entrati ${plurale(esiti.length, 'contatto', 'contatti')}`,
+      sottotitolo: `«${R.esc(m.nome)}» è collegato. Ecco dove li hanno mandati le regole.`,
+      corpo: esiti.map((x) => { const c = x.r && x.r.contatto; return `<div class="ge-meta-esito"><div><div class="grassetto">${R.esc(x.lead.nome)}</div><div class="piccolo secondario">${x.e.numero ? 'Regola ' + x.e.numero : 'Nessuna regola: impostazioni predefinite'} → ${R.esc(x.descr)}</div></div>${c ? `<a class="btn piccolo secondario-campo" href="#/contatto/${c.id}">Apri il contatto</a>` : ''}</div>`; }).join(''),
+      pulsanti: [{ testo: 'Ho capito', classe: 'primario', chiudi: true }],
+    });
+  }
+  /* «Prova le regole» dentro la finestra del modulo Meta: si prova lì, senza chiudere la finestra. */
+  const provaRegoleOriginale = R.azioni['re-prova'];
+  R.azioni['re-prova'] = (el) => {
+    if (!String(el.dataset.k || '').startsWith('ge-meta-') || !bozzaMeta) { if (provaRegoleOriginale) provaRegoleOriginale(el); return; }
+    const box = document.getElementById('ge-meta-prova-regole');
+    if (!box) return;
+    if (box.innerHTML.trim()) { box.innerHTML = ''; return; }
+    const m = moduloMeta(bozzaMeta.id);
+    box.innerHTML = `<div class="riquadro medio beige spazio-sopra"><div class="grassetto" style="margin-bottom:8px">Prova le regole con risposte finte</div>
+      <div class="griglia g-3">${domandeRegole(m).map((d) => gruppo(R.esc(d.etichetta), scelta(`id="ge-pr-${d.chiave}" name="pr_${d.chiave}" data-cambia="ge-meta-prova-calcola" style="background-color:#fff"`, [['', 'nessuna risposta']].concat(d.risposte.map((x) => [x, x])), ''), 'ge-pr-' + d.chiave)).join('')}</div>
+      <div class="riquadro scuro" id="ge-meta-esito-prova" style="padding:14px 16px"></div><p class="piccolo secondario" style="margin:8px 4px 0">Non si crea nessun contatto.</p></div>`;
+    R.azioni['ge-meta-prova-calcola']();
+  };
+  R.azioni['ge-meta-prova-calcola'] = () => {
+    const box = document.getElementById('ge-meta-esito-prova');
+    if (!box || !bozzaMeta) return;
+    const v = R.valori(document.getElementById('ge-meta-prova-regole'));
+    const risposte = {};
+    Object.keys(v).forEach((k) => { if (k.startsWith('pr_') && v[k]) risposte[k.slice(3)] = v[k]; });
+    const e = R.applicaRegole(bozzaMeta.regole, risposte, predefiniteDalForm());
+    box.innerHTML = `<div style="color:var(--lime);font-size:12.5px">${e.numero ? 'Vale la regola ' + e.numero : 'Nessuna regola corrisponde: valgono le impostazioni predefinite'}</div><div class="grassetto" style="margin-top:4px">${R.esc(R.descriviAzioni(e.azioni))}</div>`;
+  };
+
+  /* ---------- Azioni della sezione ---------- */
+  R.azioni['ge-meta-collega'] = (el) => {
+    const m = moduloMeta(el.dataset.id);
+    if (!m) return;
+    if (!R.amministratore()) { R.avviso('Solo gli amministratori collegano i moduli Meta'); return; }
+    if (R.posizione().percorso !== '/impostazioni/meta') { R.vai('#/impostazioni/meta'); setTimeout(() => finestraCollegaMeta(m), 160); } else finestraCollegaMeta(m);
+  };
+  R.azioni['ge-meta-scollega'] = (el) => {
+    const m = moduloMeta(el.dataset.id);
+    if (!m) return;
+    R.modale({
+      titolo: `Scollegare «${R.esc(m.nome)}»?`,
+      sottotitolo: 'I nuovi contatti di questo modulo resteranno in attesa finché non lo ricolleghi: nessuno va perso. I contatti già entrati restano dove sono.',
+      classe: 'stretta',
+      pulsanti: [{ testo: 'Annulla', chiudi: true }, {
+        testo: 'Scollega', classe: 'rosso', fai: () => {
+          m.stato = 'non-collegato'; delete m.collegatoDa;
+          const me = meta();
+          if (me.autoCollega.daModulo === m.id) me.autoCollega = { attivo: false, daModulo: null };
+          registra(`Ha scollegato il modulo Meta «${m.nome}»`);
+          R.salva(); R.aggiorna(); R.avviso('Modulo scollegato: i nuovi contatti restano in attesa');
+        },
+      }],
+    });
+  };
+  R.azioni['ge-meta-controllato'] = (el) => { const m = moduloMeta(el.dataset.id); if (!m) return; m.controllato = true; R.salva(); R.aggiorna(); R.avviso('Segnato come controllato'); };
+  R.azioni['ge-meta-auto-spegni'] = () => {
+    const me = meta();
+    const prima = Object.assign({}, me.autoCollega);
+    me.autoCollega = { attivo: false, daModulo: null };
+    R.salva(); R.aggiorna();
+    R.avviso('I moduli nuovi resteranno in attesa finché non li colleghi', { annulla: () => { me.autoCollega = prima; R.salva(); R.aggiorna(); } });
+  };
+  R.azioni['ge-meta-ricollega'] = () => {
+    const me = meta();
+    R.modale({
+      titolo: 'Ricollega la pagina Facebook',
+      sottotitolo: 'Tre passi semplici. Nel prototipo il collegamento è simulato.',
+      corpo: `<ol class="ge-ordine">${ISTRUZIONI.meta.map((t, i) => `<li><span class="n">${i + 1}</span><span>${R.esc(t)}</span></li>`).join('')}</ol>`,
+      pulsanti: [{ testo: 'Annulla', chiudi: true }, {
+        testo: 'Simula: collegamento riuscito', classe: 'primario', fai: () => {
+          if (!R.serveConnessione('il collegamento')) return false;
+          me.semaforo = 'verde'; me.ultimaProva = R.adesso();
+          registra(`Ha ricollegato la pagina Facebook «${me.pagina}»`);
+          R.salva(); R.aggiorna(); R.avviso(`Pagina ricollegata: vediamo ${plurale(me.moduli.filter((m) => m.stato !== 'archiviato').length, 'modulo attivo', 'moduli attivi')}`);
+        },
+      }],
+    });
+  };
+  R.azioni['ge-meta-prova-pagina'] = () => {
+    if (!R.serveConnessione('la prova del collegamento')) return;
+    const me = meta();
+    me.ultimaProva = R.adesso(); R.salva(); R.aggiorna();
+    R.avviso(`Prova riuscita: la pagina risponde e vediamo ${plurale(me.moduli.filter((m) => m.stato !== 'archiviato').length, 'modulo attivo', 'moduli attivi')}`);
+  };
+  R.azioni['ge-meta-app'] = () => {
+    const me = meta();
+    me.app = me.app === 'approvata' ? 'revisione' : 'approvata';
+    if (me.app === 'approvata') R.notifica('Meta ha approvato l\'app: i contatti dei moduli arrivano direttamente, senza ripiego', '#/impostazioni/meta', 'u1');
+    R.salva(); R.aggiorna();
+    R.avviso(me.app === 'approvata' ? 'Simulazione: app approvata da Meta' : 'Simulazione: app di nuovo in revisione');
+  };
+  R.azioni['ge-meta-sim-modulo'] = (el) => { simMeta.modulo = el.value; R.aggiorna(); };
+  const NOMI_META = ['Davide', 'Rosaria', 'Chiara', 'Pasquale', 'Ilaria', 'Vincenzo', 'Marta', 'Ciro', 'Federica', 'Raffaele', 'Giusy', 'Alessandro'];
+  const COGNOMI_META = ['Romano', 'Caruso', 'Greco', 'Marino', 'Rizzo', 'Bruno', 'Gallo', 'De Luca', 'Mancini', 'Longo', 'Costa', 'Fontana'];
+  const aCaso = (lista) => lista[Math.floor(Math.random() * lista.length)];
+  const cifre = (n) => Array.from({ length: n }, () => Math.floor(Math.random() * 10)).join('');
+  R.azioni['ge-meta-sim'] = () => {
+    const box = document.getElementById('ge-meta-sim');
+    const m = moduloMeta((document.getElementById('ge-ms-modulo') || {}).value || simMeta.modulo);
+    if (!box || !m) return;
+    const v = R.valori(box);
+    const risposte = {};
+    domandeRegole(m).forEach((d) => { risposte[d.chiave] = v['ms_' + d.chiave] || aCaso(d.risposte); });
+    const nome = aCaso(NOMI_META) + ' ' + aCaso(COGNOMI_META);
+    const l = { id: R.id('ld'), nome, telefono: `+39 3${20 + Math.floor(Math.random() * 79)} ${cifre(3)} ${cifre(4)}`, email: nome.toLowerCase().replace(/[^a-z]+/g, '.') + '@esempio.it', fonte: v.fonte || 'Facebook', consensoWA: Math.random() < 0.8, consensoEmail: Math.random() < 0.6, risposte, quando: R.adesso() };
+    m.contattiMeta++;
+    simMeta.modulo = m.id;
+    if (m.stato !== 'collegato') {
+      m.inAttesa.push(l); m.ultimo = R.adesso();
+      simMeta.ultimo = { nome, modulo: m.nome, attesa: true };
+      R.notifica(`Nuovo contatto in attesa dal modulo Meta non collegato <b>${R.esc(m.nome)}</b>: collegalo per farlo entrare`, '#/impostazioni/meta', 'u1');
+      R.salva(); R.aggiorna();
+      R.avviso(`Il modulo non è collegato: ${R.esc(nome)} resta in attesa, nessun contatto va perso`);
+      return;
+    }
+    const x = entraLead(m, l);
+    m.ricevuti++;
+    simMeta.ultimo = { nome, modulo: m.nome, numero: x.e.numero, descr: x.descr, contatto: x.r && x.r.contatto ? x.r.contatto.id : null };
+    R.salva(); R.aggiorna();
+    R.avviso(`Arrivato ${R.esc(nome)} da «${R.esc(m.nome)}» · ${x.e.numero ? 'regola ' + x.e.numero : 'impostazioni predefinite'}${x.r && x.r.contatto ? ` · <a href="#/contatto/${x.r.contatto.id}" style="color:var(--lime)">Apri il contatto</a>` : ''}`, { durata: 9000 });
+  };
+  R.azioni['ge-meta-nuovo-modulo'] = () => {
+    const me = meta();
+    const fonte = me.moduli.find((m) => m.stato === 'collegato' && m.simileA == null && /ZES/.test(m.nome)) || me.moduli.find((m) => m.stato === 'collegato');
+    if (!fonte) { R.avviso('Collega prima almeno un modulo'); return; }
+    const adesso = new Date();
+    const radice = fonte.nome.replace(/\s*\([^)]*\)\s*$/, '');
+    let nomeNuovo = `${radice} (copia ${ddmm(adesso)} ${R.ora(adesso.toISOString())})`;
+    for (let k = 2; me.moduli.some((m) => m.nome === nomeNuovo); k++) nomeNuovo = `${radice} (copia ${ddmm(adesso)} ${R.ora(adesso.toISOString())} · ${k})`;
+    const nuovo = { id: R.id('mm'), nome: nomeNuovo, codice: '10' + cifre(14), stato: 'non-collegato', creato: R.adesso(), campagna: fonte.campagna, domande: clona(fonte.domande), simileA: fonte.id,
+      abbinamenti: {}, consensoWA: 'casella', consensoEmail: 'casella', predefinite: null, regole: [], contattiMeta: 0, ricevuti: 0, ultimo: null, inAttesa: [] };
+    const modello = me.autoCollega.attivo ? moduloMeta(me.autoCollega.daModulo) : null;
+    if (modello) {
+      Object.assign(nuovo, { stato: 'collegato', collegatoDa: 'auto', copiatoDa: modello.id, controllato: false, collegatoIl: R.adesso(), abbinamenti: clona(modello.abbinamenti || {}), consensoWA: modello.consensoWA, consensoEmail: modello.consensoEmail, campagna: modello.campagna, predefinite: clona(modello.predefinite), regole: clona(modello.regole || []) });
+      tuttiAmministratori().forEach((id) => R.notifica(`Nuovo modulo Meta <b>${R.esc(nuovo.nome)}</b> collegato da solo con le impostazioni di «${R.esc(modello.nome)}»: controllalo`, '#/impostazioni/meta', id));
+    } else {
+      tuttiAmministratori().forEach((id) => R.notifica(`Nuovo modulo Meta non collegato: <b>${R.esc(nuovo.nome)}</b>. Collegalo: i contatti restano in attesa`, '#/impostazioni/meta', id));
+    }
+    me.moduli.unshift(nuovo);
+    simMeta.modulo = nuovo.id;
+    registra(`Meta ha creato il modulo «${nuovo.nome}» sulla pagina${modello ? ' (collegato da solo)' : ''}`);
+    R.salva(); R.aggiorna();
+    R.avviso(modello ? `Nuovo modulo in Meta: collegato da solo con le impostazioni di «${R.esc(modello.nome)}»` : 'Nuovo modulo in Meta: non è collegato, i suoi contatti resteranno in attesa');
   };
 
   /* ================= REPORT (capitolo 9.16, Dizionario dei numeri) ================= */

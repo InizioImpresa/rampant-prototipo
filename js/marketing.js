@@ -169,6 +169,32 @@
     }
     if (!s.spazio) s.spazio = { usatoMb: 1650, limiteMb: 2048 };
     if (!s.copieFunnel) s.copieFunnel = [];
+    regoleMo1(s);
+  }
+  /* Esempio di domande condizionali e regole di qualificazione nel modulo ZES (decisione del 24/10/2026).
+     Si aggiunge anche ai dati già salvati nel browser. */
+  function regoleMo1(s) {
+    const mo = (s.moduli || []).find((m) => m.id === 'mo1');
+    if (!mo || mo.versioneRegole) return;
+    const c = (id, tipo, domanda, extra) => Object.assign({ id, tipo, domanda, obbligatorio: false, risposte: [], salvaNel: '' }, extra || {});
+    const nuovi = [
+      c('cm-impresa', 'scelta', 'Hai già un\'impresa?', { risposte: ['Sì', 'No, sto per aprirla'] }),
+      c('cm-fatturato', 'tendina', 'Fatturato dell\'ultimo anno', { risposte: ['Meno di 100.000 €', '100.000 – 500.000 €', '500.000 – 2 milioni €', 'Oltre 2 milioni €'], segnaposto: 'Scegli il fatturato', salvaNel: 'Fatturato', mostraSe: { campo: 'cm-impresa', operatore: 'uguale', valore: 'Sì' } }),
+      c('cm-anni', 'numero', 'Quanti anni hai?', { segnaposto: 'es. 28', salvaNel: 'Età', mostraSe: { campo: 'cm-impresa', operatore: 'uguale', valore: 'No, sto per aprirla' } }),
+    ].filter((n) => !mo.campi.some((x) => x.id === n.id));
+    const iEmail = mo.campi.findIndex((x) => x.tipo === 'email');
+    mo.campi.splice(iEmail >= 0 ? iEmail + 1 : mo.campi.length, 0, ...nuovi);
+    const inv = mo.campi.find((x) => x.domanda === 'Quanto vuoi investire?');
+    if (!mo.campi.some((x) => x.id === 'cm-crif')) {
+      const crif = c('cm-crif', 'scelta', 'Hai segnalazioni come cattivo pagatore (CRIF o Centrale Rischi)?', { risposte: ['Sì', 'No'] });
+      const i = inv ? mo.campi.indexOf(inv) + 1 : mo.campi.findIndex((x) => x.tipo === 'privacy');
+      mo.campi.splice(i >= 0 ? i : mo.campi.length, 0, crif);
+    }
+    mo.regole = [
+      { id: 'rg-crif', modo: 'tutte', condizioni: [{ domanda: 'cm-crif', operatore: 'uguale', valore: 'Sì' }], azioni: { fase: 'p1|f6', responsabile: '', etichette: 'non finanziabile', automazione: 'nessuna', pagina: 'neutra', promemoria: 'no' } },
+    ].concat(inv ? [{ id: 'rg-valore', modo: 'tutte', condizioni: [{ domanda: inv.id, operatore: 'uguale', valore: 'Oltre 500.000 €' }], azioni: { responsabile: 'u1', etichette: 'alto valore' } }] : [])
+      .concat([{ id: 'rg-nuova', modo: 'tutte', condizioni: [{ domanda: 'cm-impresa', operatore: 'uguale', valore: 'No, sto per aprirla' }], azioni: { fase: 'p1|f1', etichette: 'nuova impresa' } }]);
+    mo.versioneRegole = 1;
   }
   function sottodominioDi(s) { const a = (s.aziende || []).find((x) => x.id === s.aziendaAttiva); return ((a && a.sottodominio) || 'azienda') + '.rampant.it'; }
   R.estendiDati(datiMarketing);
@@ -176,7 +202,8 @@
   function assicura() {
     if (!R.stato) return;
     if (!R.stato.filtri) R.stato.filtri = {};
-    if (!R.stato.pagine || !R.stato.moduli || !R.stato.campagne || !R.stato.domini || !R.stato.spazio || !R.stato.copieFunnel || (R.stato.funnel || []).some((f) => !f.dominio || !f.modulo || !f.campagna)) { datiMarketing(R.stato); R.salva(); }
+    const mo1 = (R.stato.moduli || []).find((m) => m.id === 'mo1');
+    if (!R.stato.pagine || !R.stato.moduli || !R.stato.campagne || !R.stato.domini || !R.stato.spazio || !R.stato.copieFunnel || (mo1 && !mo1.versioneRegole) || (R.stato.funnel || []).some((f) => !f.dominio || !f.modulo || !f.campagna)) { datiMarketing(R.stato); R.salva(); }
   }
 
   /* ================= Stile proprio ================= */
@@ -456,9 +483,68 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     return `<button type="button" class="pp-btn ${esc(b.dimensione || 'M')}" style="background:${bg};color:${testoSu(bg)};border-radius:${raggio(b)}"${azione}>${tipo === 'whatsapp' || b.tipo === 'whatsapp' ? R.icona('whatsapp', 18) : ''}${esc(testo)}</button>`;
   }
 
+  /* ---------- Domande condizionali: "Mostra questa domanda solo se…" ----------
+     c.mostraSe = { campo: id della domanda precedente, operatore: 'uguale' | 'diverso', valore }.
+     Una domanda nascosta non è obbligatoria e la sua risposta non viene inviata. */
+  const TIPI_CON_RISPOSTE = ['tendina', 'scelta', 'settore', 'regione'];
+  function campoVisibile(mo, c, val, prof) {
+    const s = c.mostraSe;
+    if (!s || !s.campo) return true;
+    const rif = mo.campi.find((x) => x.id === s.campo);
+    if (!rif || (prof || 0) > 6) return true;
+    if (!campoVisibile(mo, rif, val, (prof || 0) + 1)) return false;
+    const v = String((val || {})[rif.id] == null ? '' : val[rif.id]).trim();
+    if (!v) return false;
+    return s.operatore === 'diverso' ? v !== s.valore : v === s.valore;
+  }
+  const testoCondizione = (mo, c) => {
+    const s = c.mostraSe;
+    const rif = s && mo.campi.find((x) => x.id === s.campo);
+    if (!rif) return '';
+    return `Solo se «${rif.domanda}» ${s.operatore === 'diverso' ? 'non è' : 'è'} «${s.valore}»`;
+  };
+  /* Risposte attuali di un modulo (pagina pubblica o anteprima dell'editor), per domanda */
+  function risposteDalModulo(box) {
+    const v = {};
+    box.querySelectorAll('[name^="c_"]').forEach((el) => {
+      const id = el.name.slice(2);
+      if (el.type === 'radio') { if (el.checked) v[id] = el.value; else if (!(id in v)) v[id] = ''; }
+      else if (el.type === 'checkbox') v[id] = el.checked ? 'Sì' : '';
+      else if (el.type !== 'file') v[id] = (el.value || '').trim();
+    });
+    return v;
+  }
+  function aggiornaCondizioni(box) {
+    const prova = !!box.dataset.prova;
+    const mo = prova && edm.copia && edm.copia.id === box.dataset.modulo ? edm.copia : modulo(box.dataset.modulo);
+    if (!mo) return;
+    const val = risposteDalModulo(box);
+    if (prova) edm.prova = val;
+    mo.campi.forEach((c) => {
+      if (!c.mostraSe) return;
+      const w = box.querySelector(`[data-campo-id="${c.id}"]`);
+      if (!w) return;
+      const vis = campoVisibile(mo, c, val);
+      if (w.classList.contains('mk-campo-mod')) w.classList.toggle('mk-cond-chiusa', !vis);
+      else w.hidden = !vis;
+    });
+  }
+  ['change', 'input'].forEach((tipo) => document.addEventListener(tipo, (ev) => {
+    const box = ev.target.closest && ev.target.closest('[data-modulo]');
+    if (box && (box.matches('form.pp-form') || box.dataset.prova)) aggiornaCondizioni(box);
+  }));
+  /* Nell'anteprima dell'editor dei moduli si può rispondere alle domande per provare le condizioni:
+     il clic sui controlli non deve selezionare il campo (né essere bloccato). */
+  document.addEventListener('click', (ev) => {
+    if (!ev.target.closest || !ev.target.closest('.mk-modulo-anteprima[data-prova]')) return;
+    if (ev.target.closest('select, input, .pp-scelte label, .pp-check')) ev.stopPropagation();
+  }, true);
+
   function campoModulo(c, o, idForm) {
     const pub = o.modo === 'pubblica';
-    const dis = pub ? '' : ' disabled';
+    const dis = pub || o.modo === 'prova' ? '' : ' disabled';
+    const val = o.valori || {};
+    const valore = val[c.id] == null ? '' : String(val[c.id]);
     const id = idForm + '-' + c.id;
     const nome = ['nome', 'telefono', 'email', 'privacy', 'consensoWa', 'consensoEmail'].includes(c.tipo) ? c.tipo : 'c_' + c.id;
     const ob = c.obbligatorio ? ' *' : '';
@@ -471,26 +557,31 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
       case 'email': return `<div class="pp-grp" data-campo="email">${lab}<input class="pp-campo" id="${id}" name="email" type="email" inputmode="email" autocomplete="email" placeholder="${esc(c.segnaposto || '')}"${dis}></div>`;
       case 'nome': return `<div class="pp-grp" data-campo="nome">${lab}<input class="pp-campo" id="${id}" name="nome" autocomplete="name" placeholder="${esc(c.segnaposto || '')}"${dis}></div>`;
       case 'tendina': case 'settore': case 'regione':
-        return `<div class="pp-grp" data-campo="${nome}">${lab}<select class="pp-campo" id="${id}" name="${nome}"${dis}><option value="">${esc(c.segnaposto || 'Scegli')}</option>${(c.risposte || []).map((r) => `<option>${esc(r)}</option>`).join('')}</select></div>`;
+        return `<div class="pp-grp" data-campo="${nome}">${lab}<select class="pp-campo" id="${id}" name="${nome}"${dis}><option value="">${esc(c.segnaposto || 'Scegli')}</option>${(c.risposte || []).map((r) => `<option ${r === valore ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div>`;
       case 'scelta':
-        return `<div class="pp-grp" data-campo="${nome}"><label>${esc(c.domanda)}${ob}</label><div class="pp-scelte">${(c.risposte || []).map((r, i) => `<label><input type="radio" name="${nome}" value="${esc(r)}" ${i === 1 && !pub ? 'checked' : ''}${dis}>${esc(r)}</label>`).join('')}</div></div>`;
+        return `<div class="pp-grp" data-campo="${nome}" role="radiogroup" aria-label="${esc(c.domanda)}"><label>${esc(c.domanda)}${ob}</label><div class="pp-scelte">${(c.risposte || []).map((r) => `<label><input type="radio" name="${nome}" value="${esc(r)}" ${r === valore ? 'checked' : ''}${dis}>${esc(r)}</label>`).join('')}</div></div>`;
+      case 'numero': return `<div class="pp-grp" data-campo="${nome}">${lab}<input class="pp-campo" id="${id}" name="${nome}" type="number" inputmode="numeric" min="0" placeholder="${esc(c.segnaposto || '')}" value="${esc(valore)}"${dis}></div>`;
       case 'data': return `<div class="pp-grp" data-campo="${nome}">${lab}<input class="pp-campo" id="${id}" name="${nome}" type="date"${dis}></div>`;
       case 'file': return `<div class="pp-grp" data-campo="${nome}">${lab}<input class="pp-campo" id="${id}" name="${nome}" type="file" style="padding-top:11px"${dis}><div class="pp-nota">File fino a 25 MB.</div></div>`;
       case 'privacy': case 'consensoWa': case 'consensoEmail':
         return `<div data-campo="${nome}"><label class="pp-check"><input type="checkbox" name="${nome}"${dis}><span>${esc(c.domanda)}${c.tipo === 'privacy' ? ' (<span style="text-decoration:underline">informativa</span>)' : ''}${ob}</span></label></div>`;
       case 'nascosto': return pub ? `<input type="hidden" name="${nome}" value="">` : `<div class="pp-nota" style="background:#EFE4F6;color:#45285C;border-radius:10px;padding:8px 12px">Campo nascosto: ${esc(c.domanda)}</div>`;
-      default: return `<div class="pp-grp" data-campo="${nome}">${lab}<input class="pp-campo" id="${id}" name="${nome}" placeholder="${esc(c.segnaposto || '')}"${dis}></div>`;
+      default: return `<div class="pp-grp" data-campo="${nome}">${lab}<input class="pp-campo" id="${id}" name="${nome}" placeholder="${esc(c.segnaposto || '')}" value="${esc(valore)}"${dis}></div>`;
     }
   }
   function htmlModulo(b, m, o) {
     const mo = modulo(b.modulo) || modulo('mo1');
     const idForm = 'f-' + b.id;
-    const campi = mo.campi.map((c) => campoModulo(c, o, idForm)).join('');
+    const interattivo = o.modo === 'pubblica' || o.modo === 'prova';
+    const val = o.valori || {};
+    const campi = mo.campi.map((c) => `<div class="pp-cond" data-campo-id="${esc(c.id)}"${campoVisibile(mo, c, val) ? '' : ' hidden'}>${campoModulo(c, o, idForm)}</div>`).join('');
+    const nascoste = interattivo ? 0 : mo.campi.filter((c) => c.mostraSe && !campoVisibile(mo, c, val)).length;
     const haTel = mo.campi.some((c) => c.tipo === 'telefono');
     const haEmail = mo.campi.some((c) => c.tipo === 'email');
-    return `<form class="pp-form" id="${idForm}" novalidate onsubmit="return false" data-modulo="${mo.id}">
+    return `<form class="pp-form" id="${idForm}" novalidate onsubmit="return false" data-modulo="${mo.id}"${o.modo === 'prova' ? ' data-prova="1"' : ''}>
       <h3 class="pp-h3">${esc(b.testo || mo.titolo)}</h3>${b.sotto ? `<p class="sotto">${esc(b.sotto)}</p>` : ''}
       ${campi}
+      ${nascoste ? `<div class="pp-nota" style="margin:0 0 8px">+ ${nascoste} ${nascoste === 1 ? 'domanda che compare' : 'domande che compaiono'} solo con certe risposte</div>` : ''}
       ${haTel && haEmail ? '<div class="pp-nota" style="margin:0 0 8px">Scrivi almeno il telefono o l\'email.</div>' : ''}
       <div style="margin-top:10px">${o.modo === 'pubblica'
         ? `<button type="submit" class="pp-btn ${esc(b.dimensione || 'M')}" style="width:100%;background:${coloreBottone(b, m)};color:${testoSu(coloreBottone(b, m))};border-radius:${raggio(b)}" data-azione="mk-pp-invia" data-pagina="${o.paginaId}" data-blocco="${b.id}">${esc(b.pulsante || mo.pulsante)}</button>`
@@ -763,10 +854,11 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     const perc = R.percorso(d.percorso) || { nome: '—' };
     const fase = R.fase(d.percorso, d.fase) || { nome: '—' };
     const aut = (R.stato.automazioni || []).find((a) => a.id === f.automazione);
-    const anelli = [
-      `Entra in <b>Affari · ${esc(perc.nome)} · ${esc(fase.nome)}</b>`,
+    const nRegole = (mo.regole || []).length;
+    const anelli = (nRegole ? [`Controlla <b>${nRegole} ${nRegole === 1 ? 'regola' : 'regole'}</b> di qualificazione`] : []).concat([
+      `${nRegole ? 'Altrimenti entra' : 'Entra'} in <b>Affari · ${esc(perc.nome)} · ${esc(fase.nome)}</b>`,
       `Assegnato <b>${d.responsabile === 'turno' ? 'a turno' : 'a ' + esc(R.utenteDa(d.fisso).breve)}</b>`,
-    ];
+    ]);
     if (aut) anelli.push('WhatsApp di benvenuto <b>subito</b>', 'Brochure <b>dopo 2 minuti</b>');
     if (d.promemoria) anelli.push(`Promemoria: richiamare <b>entro ${d.ore || 1} ${(+d.ore || 1) === 1 ? 'ora' : 'ore'}</b>`);
     return { html: anelli.map((a, i) => (i ? '<span class="sep" aria-hidden="true">→</span>' : '') + `<span class="mk-anello">${a}</span>`).join(''), aut, mo };
@@ -1691,6 +1783,10 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     const pubblicati = p.pubblicati || (p.tipo === 'grazie' && ultimoInvio && ultimoInvio.funnel === f.id ? p.blocchi : null);
     if (!anteprimaBozza && (f.stato !== 'online' || !pubblicati)) return neutro('Questa pagina non è disponibile', 'Torna a trovarci più tardi.');
     let blocchi = anteprimaBozza ? p.blocchi : pubblicati;
+    if (p.tipo === 'grazie' && !anteprimaBozza && ultimoInvio && ultimoInvio.funnel === f.id && ultimoInvio.neutra) {
+      const testa = blocchi.find((x) => x.tipo === 'intestazione');
+      blocchi = [nuovoBlocco('intestazione', { testo: testa ? testa.testo : 'inizio', pulsante: '' }), nuovoBlocco('titolo', { sfondo: 'tenue', testo: 'Grazie, abbiamo ricevuto la tua richiesta.', colore: 'scuro', dimensione: 'L' }), nuovoBlocco('testo', { sfondo: 'tenue', testo: 'Ti scriveremo se possiamo aiutarti.' })];
+    }
     if (!anteprimaBozza && versioneAB(p) === 'B') {
       blocchi = JSON.parse(JSON.stringify(blocchi));
       const t = blocchi.find((x) => x.tipo === 'titolo');
@@ -1716,18 +1812,23 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     const c = r ? (r.contatto && typeof r.contatto === 'object' ? r.contatto : R.contatto(r.contatto)) : null;
     const a = r ? (r.affare && typeof r.affare === 'object' ? r.affare : R.affare(r.affare)) : null;
     const f = funnel(u.funnel);
-    const mo = modulo(f.modulo) || modulo('mo1');
+    const mo = modulo(u.modulo) || modulo(f.modulo) || modulo('mo1');
     const perc = a ? R.percorso(a.percorso) : R.percorso(mo.dopo.percorso);
     const fase = a ? R.fase(a.percorso, a.fase) : R.fase(mo.dopo.percorso, mo.dopo.fase);
     const resp = a ? (a.responsabile ? R.utenteDa(a.responsabile).nome : null) : (mo.dopo.responsabile === 'turno' ? 'assegnato a turno' : R.utenteDa(mo.dopo.fisso).nome);
     const nome = esc((c && c.nome) || u.dati.nome);
+    const az = (r && r.azioni) || (u.esito && u.esito.azioni) || null;
     const voci = [
       u.collegato && r ? (r.nuovo === false ? `Contatto già presente: <b>${nome}</b> aggiornato. Il modulo riempie solo i campi vuoti; i valori diversi sono nella storia.` : `Contatto creato: <b>${nome}</b>`) : `Contatto creato o aggiornato: <b>${nome}</b> (stesso telefono o email = stesso contatto)`,
+      u.esito ? `Regola applicata: <b>${u.esito.numero ? 'regola ' + u.esito.numero : 'nessuna, impostazioni predefinite'}</b>${u.esito.numero ? ' (' + esc(descriviRegola(mo, u.esito.regola)) + ')' : ''} · ${esc(descriviAzioni(az || u.esito.azioni))}` : '',
       `Affare in <b>${esc((perc || {}).nome || 'Finanza agevolata')} · ${esc((fase || {}).nome || 'Nuovo contatto')}</b>`,
       `Responsabile: <b>${resp ? esc(resp) : 'nessuno, promemoria a tutti gli amministratori'}</b>`,
-      `WhatsApp di benvenuto <b>in coda</b>: parte subito se siete nell'orario di invio, altrimenti all'apertura${u.dati.consensoWhatsapp ? '' : ' (il visitatore non ha dato il consenso ai messaggi successivi)'}`,
-      'Promemoria per il responsabile: <b>richiamare entro 1 ora di lavoro</b>',
+      az && az.etichette ? `Etichetta: <b>${esc(az.etichette)}</b>` : '',
+      az && az.automazione === 'nessuna' ? 'Nessun WhatsApp di benvenuto: lo ha deciso la regola' : (u.dati.consensoWhatsapp ? 'WhatsApp di benvenuto <b>in coda</b>: parte subito se siete nell\'orario di invio, altrimenti all\'apertura' :'WhatsApp di benvenuto <b>non inviato</b>: il visitatore non ha dato il consenso WhatsApp (il responsabile può chiamare)'),
+      az && az.promemoria === 'no' ? 'Nessun promemoria di chiamata' : 'Promemoria per il responsabile: <b>richiamare entro 1 ora di lavoro</b>',
+      u.neutra ? 'Al visitatore è stato mostrato un ringraziamento neutro, senza promettere la chiamata' : '',
       'Avviso nella campanella e su WhatsApp al responsabile',
+      u.dati.risposte && Object.keys(u.dati.risposte).length ? `Risposte salvate nella storia: ${esc(Object.entries(u.dati.risposte).map(([k, x]) => k + ' ' + x).join(' · '))}` : '',
       `Fonte e campagna salvate: <b>${esc(u.dati.campagna)}</b> · ${esc(u.dati.pagina)}`,
     ];
     return `<div class="mk-separatore-prototipo"><section class="mk-cosa-successo" aria-label="Prototipo: cosa è successo nel software">
@@ -1735,7 +1836,7 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
       <h2>Prototipo · cosa è successo nel software</h2>
       ${!u.collegato ? '<p class="piccolo" style="opacity:.85;margin:6px 0 0">In questa versione del prototipo la parte che crea il contatto non è ancora collegata: ecco cosa farà il software.</p>' : ''}
       ${u.errore ? `<p class="piccolo" style="color:#F4A79D;margin:6px 0 0">Il prototipo ha avuto un errore nel creare il contatto: ${esc(u.errore)}</p>` : ''}
-      <ul>${voci.map((v) => `<li>${R.icona('spunta', 16)}<span>${v}</span></li>`).join('')}</ul>
+      <ul>${voci.filter(Boolean).map((v) => `<li>${R.icona('spunta', 16)}<span>${v}</span></li>`).join('')}</ul>
       <div class="riga-flex">${c ? `<a class="btn lime" href="#/contatto/${esc(c.id)}">Vedi il contatto</a>` : ''}<a class="btn" href="#/affari">Vai agli Affari</a><a class="btn scuro" style="background:var(--scuro-2)" href="#/marketing/funnel/${f.id}">Torna al funnel</a></div>
     </section></div>`;
   }
@@ -1779,25 +1880,44 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
       sbagliati.push(g);
     };
     const haCampo = (tipo) => mo.campi.some((c) => c.tipo === tipo);
+    const risposteId = risposteDalModulo(form);
+    const visibile = (c) => campoVisibile(mo, c, risposteId);
     const tel = (v.telefono || '').replace(/[\s.\-/()]/g, '');
     if (haCampo('nome') && !v.nome) errore('nome', 'Scrivi il tuo nome.');
     if (!tel && !v.email) { if (haCampo('telefono')) errore('telefono', 'Scrivi il telefono oppure l\'email, così possiamo ricontattarti.'); else errore('email', 'Scrivi l\'email, così possiamo ricontattarti.'); }
     if (tel && !/^\+?\d{6,15}$/.test(tel)) errore('telefono', 'Il numero non sembra giusto: scrivi solo cifre, per esempio 333 123 4567.');
     if (v.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email)) errore('email', 'L\'email non sembra giusta: controlla che ci sia la chiocciola, per esempio mario@esempio.it.');
-    mo.campi.forEach((c) => { if (c.obbligatorio && !['nome', 'privacy', 'telefono', 'email', 'nascosto'].includes(c.tipo) && !v['c_' + c.id]) errore('c_' + c.id, 'Rispondi a questa domanda.'); });
+    mo.campi.forEach((c) => {
+      if (!visibile(c)) return;
+      if (c.obbligatorio && !['nome', 'privacy', 'telefono', 'email', 'nascosto'].includes(c.tipo) && !v['c_' + c.id]) errore('c_' + c.id, 'Rispondi a questa domanda.');
+      else if (c.tipo === 'numero' && v['c_' + c.id] && isNaN(Number(String(v['c_' + c.id]).replace(',', '.')))) errore('c_' + c.id, 'Scrivi solo un numero, per esempio 28.');
+    });
     if (haCampo('privacy') && !v.privacy) errore('privacy', 'Per inviare la richiesta devi leggere e accettare l\'informativa privacy.');
     if (sbagliati.length) { const primo = sbagliati[0].querySelector('input, select'); if (primo) primo.focus(); return; }
     if (el.dataset.inviato) return;
     el.dataset.inviato = '1'; el.disabled = true; el.textContent = 'Invio in corso…';
     setTimeout(() => {
       const telefonoCompleto = tel ? (tel.startsWith('+') ? tel : (v.prefisso || '+39') + ' ' + v.telefono) : '';
-      const dati = { nome: v.nome, telefono: telefonoCompleto, email: v.email, consensoWhatsapp: !!v.consensoWa, consensoEmail: !!v.consensoEmail, campagna: f.campagna || f.nome, pagina: f.indirizzo, funnel: f.id };
+      const dati = { nome: v.nome, telefono: telefonoCompleto, email: v.email, consensoWhatsapp: !!v.consensoWa, consensoEmail: !!v.consensoEmail, campagna: f.campagna || f.nome, pagina: f.indirizzo, funnel: f.id, fonte: 'Landing' };
+      /* Solo le domande visibili: quelle nascoste non vengono inviate. */
+      const perRegole = {};
+      const perStoria = {};
+      mo.campi.forEach((c) => {
+        if (['nome', 'telefono', 'email', 'privacy', 'consensoWa', 'consensoEmail', 'nascosto', 'file'].includes(c.tipo) || !visibile(c)) return;
+        const val = risposteId[c.id];
+        if (val === '' || val == null) return;
+        perRegole[c.id] = val;
+        perStoria[c.domanda] = val;
+      });
+      const esito = R.applicaRegole ? R.applicaRegole(mo.regole || [], perRegole, predefiniteModulo(mo)) : { regola: null, numero: 0, azioni: predefiniteModulo(mo) };
+      const testoRegola = esito.numero ? `Qualificato dalla regola ${esito.numero}: ${descriviRegola(mo, esito.regola)} → ${descriviAzioni(esito.azioni)}` : 'Nessuna regola: impostazioni predefinite';
+      Object.assign(dati, { risposte: perStoria, azioni: esito.azioni, regola: testoRegola });
       let r = null; let err = null;
       if (typeof R.nuovoContattoDaModulo === 'function') { try { r = R.nuovoContattoDaModulo(dati); } catch (e) { console.error(e); err = e.message; } }
       f.contatti = (f.contatti || 0) + 1;
       if (p.ab && p.ab.attiva) { const k = versioneAB(p) === 'B' ? 'contattiB' : 'contattiA'; p.ab[k] = (p.ab[k] || 0) + 1; }
       R.salva();
-      ultimoInvio = { funnel: f.id, dati, r, errore: err, collegato: typeof R.nuovoContattoDaModulo === 'function' };
+      ultimoInvio = { funnel: f.id, dati, r, errore: err, collegato: typeof R.nuovoContattoDaModulo === 'function', modulo: mo.id, esito, testoRegola, neutra: esito.azioni.pagina === 'neutra' };
       const grazie = pagineDi(f.id).find((x) => x.tipo === 'grazie');
       R.vai(grazie ? percorsoPubblico(grazie) : '#/pagina/' + f.percorsoPagina + '/grazie');
       window.scrollTo(0, 0);
@@ -1814,12 +1934,12 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     settore: ['In quale settore lavori?', { risposte: ['Manifattura', 'Commercio', 'Turismo e ristorazione'], salvaNel: 'Settore / Ateco', segnaposto: 'Scegli il settore' }],
     regione: ['In quale regione?', { risposte: ['Campania', 'Puglia', 'Calabria', 'Sicilia', 'Basilicata'], salvaNel: 'Regione', segnaposto: 'Scegli la regione' }],
     tendina: ['Nuova domanda', { risposte: ['Risposta 1', 'Risposta 2'], segnaposto: 'Scegli' }], scelta: ['Nuova domanda', { risposte: ['Sì', 'No'] }],
-    data: ['Data preferita per la chiamata', {}], file: ['Carica un documento', {}],
+    data: ['Data preferita per la chiamata', {}], file: ['Carica un documento', {}], numero: ['Nuova domanda con un numero', { segnaposto: 'es. 10' }],
     privacy: ['Ho letto l\'informativa privacy e acconsento a essere ricontattato', { obbligatorio: true }], consensoWa: ['Voglio ricevere aggiornamenti su WhatsApp', {}], consensoEmail: ['Voglio ricevere aggiornamenti per email', {}],
     nascosto: ['Fonte e campagna (dall\'indirizzo della pubblicità)', { salvaNel: 'Fonte e campagna' }],
   };
-  const GRUPPI_CAMPI = [['Persona', [['nome', 'Nome e cognome'], ['telefono', 'Telefono con prefisso'], ['email', 'Email']]], ['Azienda', [['ragione', 'Ragione sociale'], ['piva', 'Partita IVA'], ['settore', 'Settore / Ateco'], ['regione', 'Regione']]], ['Altro', [['tendina', 'Menu a tendina'], ['scelta', 'Scelta tra più risposte'], ['data', 'Data'], ['file', 'Carica un file'], ['privacy', 'Consenso privacy'], ['consensoWa', 'Consenso WhatsApp'], ['consensoEmail', 'Consenso email'], ['nascosto', 'Campo nascosto (fonte, campagna)']]]];
-  const DOVE_SALVARE = ['Nome del contatto', 'Telefono', 'Email', 'Ragione sociale', 'Partita IVA', 'Settore / Ateco', 'Regione', 'Valore dell\'affare', 'Fonte e campagna', 'Nota dell\'affare'];
+  const GRUPPI_CAMPI = [['Persona', [['nome', 'Nome e cognome'], ['telefono', 'Telefono con prefisso'], ['email', 'Email']]], ['Azienda', [['ragione', 'Ragione sociale'], ['piva', 'Partita IVA'], ['settore', 'Settore / Ateco'], ['regione', 'Regione']]], ['Altro', [['tendina', 'Menu a tendina'], ['scelta', 'Scelta tra più risposte'], ['numero', 'Numero'], ['data', 'Data'], ['file', 'Carica un file'], ['privacy', 'Consenso privacy'], ['consensoWa', 'Consenso WhatsApp'], ['consensoEmail', 'Consenso email'], ['nascosto', 'Campo nascosto (fonte, campagna)']]]];
+  const DOVE_SALVARE = ['Nome del contatto', 'Telefono', 'Email', 'Ragione sociale', 'Partita IVA', 'Settore / Ateco', 'Regione', 'Valore dell\'affare', 'Fatturato', 'Età', 'Fonte e campagna', 'Nota dell\'affare'];
 
   R.rotta('/marketing/moduli', {
     menu: 'marketing', titolo: 'Moduli',
@@ -1844,7 +1964,39 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     } }],
   });
 
-  const edm = { id: null, copia: null, sel: null, modificato: false };
+  const edm = { id: null, copia: null, sel: null, modificato: false, prova: {} };
+  /* Le impostazioni di "Dopo l'invio" nel formato delle regole (regole.js): sono l'"Altrimenti". */
+  function predefiniteModulo(mo) {
+    const d = (mo && mo.dopo) || {};
+    return { fase: (d.percorso || 'p1') + '|' + (d.fase || 'f1'), responsabile: d.responsabile === 'fisso' ? (d.fisso || 'turno') : 'turno', etichette: '', automazione: d.automazione || 'nessuna', pagina: 'grazie', promemoria: d.promemoria === false ? 'no' : 'si' };
+  }
+  const OPERATORI_TESTO = { uguale: 'è', diverso: 'non è', contiene: 'contiene', maggiore: 'è più di', minore: 'è meno di', compilato: 'ha una risposta', vuoto: 'non ha risposta' };
+  function descriviRegola(mo, r) {
+    if (!r) return '';
+    return (r.condizioni || []).filter((c) => c.domanda).map((c) => {
+      const d = mo.campi.find((x) => x.id === c.domanda);
+      return `«${d ? d.domanda : 'domanda tolta'}» ${OPERATORI_TESTO[c.operatore] || c.operatore}${['compilato', 'vuoto'].includes(c.operatore) ? '' : ' «' + c.valore + '»'}`;
+    }).join(r.modo === 'almeno-una' ? ' oppure ' : ' e ');
+  }
+  const descriviAzioni = (a) => (R.descriviAzioni && a ? R.descriviAzioni(a) : '');
+  function pannelloCondizione(mo, sel) {
+    if (unici.includes(sel.tipo)) return '';
+    const i = mo.campi.indexOf(sel);
+    const prima = mo.campi.slice(0, i).filter((c) => TIPI_CON_RISPOSTE.includes(c.tipo) && (c.risposte || []).length);
+    const s = sel.mostraSe;
+    if (!s) {
+      return `<div class="gruppo-campo"><div class="etichetta-campo">Mostra questa domanda solo se…</div>${prima.length ? `<button class="btn piccolo secondario-campo" data-azione="mk-mo-cond-aggiungi">${R.icona('piu', 15)} Aggiungi una condizione</button>` : '<p class="piccolo secondario" style="margin:0 4px">Per farlo serve, prima di questa, una domanda con risposte da scegliere (menu a tendina o scelta tra più risposte).</p>'}</div>`;
+    }
+    const rif = mo.campi.find((c) => c.id === s.campo);
+    const rifOk = rif && prima.includes(rif);
+    const scelte = rifOk ? prima : prima.concat(rif ? [rif] : []);
+    return `<div class="mk-cond-box"><div class="etichetta-campo" style="margin-left:0;color:inherit">Mostra questa domanda solo se…</div>
+      <select class="campo" aria-label="Domanda da cui dipende" data-cambia="mk-mo-cond" data-p="campo">${scelte.map((c) => `<option value="${esc(c.id)}" ${c.id === s.campo ? 'selected' : ''}>${esc(c.domanda)}</option>`).join('')}</select>
+      <div class="mk-cond-riga"><select class="campo" aria-label="Confronto" data-cambia="mk-mo-cond" data-p="operatore"><option value="uguale" ${s.operatore !== 'diverso' ? 'selected' : ''}>è</option><option value="diverso" ${s.operatore === 'diverso' ? 'selected' : ''}>non è</option></select>
+      <select class="campo" aria-label="Risposta" data-cambia="mk-mo-cond" data-p="valore">${(rif ? rif.risposte || [] : []).map((r) => `<option ${r === s.valore ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div>
+      ${rifOk ? '' : '<p class="piccolo" style="color:var(--errore-t);margin:4px 0">La domanda scelta ora viene dopo questa: spostala prima oppure scegline un\'altra.</p>'}
+      <div class="riga-flex" style="justify-content:space-between;margin-top:4px"><span class="piccolo">Quando è nascosta non è obbligatoria e la risposta non viene inviata.</span><button class="link" style="color:inherit" data-azione="mk-mo-cond-togli">Togli la condizione</button></div></div>`;
+  }
   function apriModulo(id) {
     if (edm.id === id && edm.copia) return;
     const mo = modulo(id);
@@ -1858,7 +2010,10 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     const fase = R.fase(d.percorso, d.fase) || { nome: '—' };
     const aut = (R.stato.automazioni || []).find((a) => a.id === d.automazione);
     const avvisa = { responsabile: 'Il responsabile', amministratori: 'Gli amministratori', tutti: 'Responsabile e amministratori' }[d.avvisa] || '—';
+    const n = (mo.regole || []).length;
     return `<div class="riquadro scuro mk-dopo spazio-sopra" style="padding:20px"><h2 class="titolo-riquadro">Dopo l'invio</h2>
+      ${rigaDopo('Regole di qualificazione', n ? n + (n === 1 ? ' regola' : ' regole') : 'Nessuna')}
+      <div class="piccolo" style="color:var(--lime);margin:12px 4px 8px">${n ? 'Altrimenti (impostazioni predefinite)' : 'Impostazioni predefinite'}</div>
       ${rigaDopo('Il contatto va in', esc(perc.nome + ' · ' + fase.nome))}${rigaDopo('Responsabile', d.responsabile === 'turno' ? 'A turno' : esc(R.utenteDa(d.fisso).breve))}${rigaDopo('Poi mostra', d.pagina === 'grazie' ? 'Pagina "Grazie"' : 'Messaggio nella pagina')}${rigaDopo('Avvisa', avvisa + ' su WhatsApp')}${rigaDopo('Avvia', aut ? esc(aut.nome) : 'Nessuna automazione')}${rigaDopo('Promemoria entro ' + (d.ore || 1) + ' ' + ((+d.ore || 1) === 1 ? 'ora' : 'ore') + ' di lavoro', d.promemoria ? 'Acceso' : 'Spento')}</div>`;
   }
 
@@ -1877,13 +2032,16 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
       const sel = mo.campi.find((c) => c.id === edm.sel);
       let corpo = '';
       if (scheda === 'modifica') {
-        const campiHtml = mo.campi.map((c) => `<div class="mk-campo-mod ${c.id === edm.sel ? 'sel' : ''}" data-azione="mk-mo-sel" data-id="${c.id}">${c.id === edm.sel && !tel ? `<span class="mk-barretta"><button data-azione="mk-mo-sposta" data-verso="-1" aria-label="Sposta su">${R.icona('su', 14)}</button><button data-azione="mk-mo-sposta" data-verso="1" aria-label="Sposta giù">${R.icona('giu', 14)}</button>${unici.includes(c.tipo) ? '' : '<button class="dup" data-azione="mk-mo-duplica">Duplica</button>'}<button class="eli" data-azione="mk-mo-elimina">Elimina</button></span>` : ''}${campoModulo(c, { modo: 'anteprima' }, 'mo')}</div>`).join('');
-        const anteprimaMod = `<div class="mk-modulo-anteprima pp" style="--pp-primario:#D63B3B"><h2>${esc(mo.titolo)}</h2><p class="secondario" style="margin:0 0 16px">${esc(mo.sotto)}</p>${campiHtml}<span class="pp-btn" style="width:100%;background:#D63B3B;color:#fff;border-radius:999px;margin-top:10px">${esc(mo.pulsante)}</span></div>`;
+        const prova = edm.prova || {};
+        const campiHtml = mo.campi.map((c) => `<div class="mk-campo-mod ${c.id === edm.sel ? 'sel' : ''} ${c.mostraSe ? 'mk-condizionale' : ''} ${campoVisibile(mo, c, prova) ? '' : 'mk-cond-chiusa'}" data-azione="mk-mo-sel" data-id="${c.id}" data-campo-id="${esc(c.id)}">${c.id === edm.sel && !tel ? `<span class="mk-barretta"><button data-azione="mk-mo-sposta" data-verso="-1" aria-label="Sposta su">${R.icona('su', 14)}</button><button data-azione="mk-mo-sposta" data-verso="1" aria-label="Sposta giù">${R.icona('giu', 14)}</button>${unici.includes(c.tipo) ? '' : '<button class="dup" data-azione="mk-mo-duplica">Duplica</button>'}<button class="eli" data-azione="mk-mo-elimina">Elimina</button></span>` : ''}${c.mostraSe ? `<div class="mk-cond-ridotto">${R.icona('occhio_no', 15)}<span><b>${esc(c.domanda)}</b> · nascosta: ${esc(testoCondizione(mo, c).replace(/^Solo se/, 'compare solo se'))}</span></div><div class="mk-cond-pieno"><span class="mk-cond-chip">${R.icona('divisore', 13)} Condizionale · ${esc(testoCondizione(mo, c))}</span>` : ''}${campoModulo(c, { modo: 'prova', valori: prova }, 'mo')}${c.mostraSe ? '</div>' : ''}</div>`).join('');
+        const nCond = mo.campi.filter((c) => c.mostraSe).length;
+        const anteprimaMod = `<div class="mk-modulo-anteprima pp" style="--pp-primario:#D63B3B" data-modulo="${esc(mo.id)}" data-prova="1"><h2>${esc(mo.titolo)}</h2><p class="secondario" style="margin:0 0 16px">${esc(mo.sotto)}</p>${nCond ? `<p class="mk-prova-nota">Puoi rispondere qui per provare: ${nCond === 1 ? 'la domanda condizionale compare' : 'le ' + nCond + ' domande condizionali compaiono'} solo con le risposte giuste.</p>` : ''}${campiHtml}<span class="pp-btn" style="width:100%;background:#D63B3B;color:#fff;border-radius:999px;margin-top:10px">${esc(mo.pulsante)}</span></div>`;
         const pannello = sel ? `<div class="riquadro medio" style="padding:18px"><h2 class="titolo-riquadro">Campo selezionato</h2>
             <div class="gruppo-campo"><label class="etichetta-campo" for="mk-mo-dom">Domanda</label><input class="campo" id="mk-mo-dom" data-digita="mk-mo-prop" data-prop="domanda" value="${esc(sel.domanda)}"></div>
             ${(sel.risposte || []).length || ['tendina', 'scelta', 'settore', 'regione'].includes(sel.tipo) ? `<div class="gruppo-campo"><div class="etichetta-campo">Risposte</div>${(sel.risposte || []).map((r, i) => `<div class="riga-flex" style="flex-wrap:nowrap;gap:6px;margin-bottom:6px"><input class="campo" style="min-height:40px" aria-label="Risposta ${i + 1}" data-digita="mk-mo-risposta" data-i="${i}" value="${esc(r)}"><button class="btn tondo secondario-campo" style="min-height:40px;width:40px" data-azione="mk-mo-togli-risposta" data-i="${i}" aria-label="Togli la risposta">${R.icona('x', 15)}</button></div>`).join('')}<button class="link verde" data-azione="mk-mo-aggiungi-risposta">+ Aggiungi risposta</button></div>` : ''}
             ${sel.tipo === 'nascosto' ? '<p class="piccolo secondario">Legge dall\'indirizzo della pubblicità la fonte e la campagna (per esempio Facebook · ZES 2026) e le salva nel contatto. Il visitatore non lo vede.</p>' : ''}
             ${['privacy', 'consensoWa', 'consensoEmail'].includes(sel.tipo) ? '' : `<label class="riga-impostazione"><span>Salva nel campo</span><select data-cambia="mk-mo-prop" data-prop="salvaNel" style="border:0;background:transparent;font-weight:600;text-align:right;max-width:60%">${['(non salvare)'].concat(DOVE_SALVARE).map((x) => `<option ${sel.salvaNel === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>`}
+            ${pannelloCondizione(mo, sel)}
             ${sel.tipo === 'nascosto' ? '' : `<div class="riga-impostazione" style="margin:0"><span>Obbligatorio${sel.tipo === 'privacy' ? ' (sempre, per legge)' : sel.tipo === 'telefono' || sel.tipo === 'email' ? '<span class="piccolo secondario" style="display:block">Serve almeno il telefono o l\'email</span>' : ''}</span><label class="interruttore"><input type="checkbox" data-cambia="mk-mo-prop" data-prop="obbligatorio" ${sel.obbligatorio ? 'checked' : ''} ${sel.tipo === 'privacy' ? 'disabled' : ''} aria-label="Obbligatorio"><span></span></label></div>`}
           </div>` : `<div class="riquadro medio" style="padding:18px"><h2 class="titolo-riquadro">Modulo</h2><p class="secondario" style="margin-top:-6px;font-size:13px">Clicca un campo nell'anteprima per cambiarlo.</p>
             <div class="gruppo-campo"><label class="etichetta-campo" for="mk-mo-t">Titolo</label><input class="campo" id="mk-mo-t" data-digita="mk-mo-gen" data-prop="titolo" value="${esc(mo.titolo)}"></div>
@@ -1898,7 +2056,16 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
         const perc = R.percorso(d.percorso);
         const opz = (arr, val) => arr.map(([k, t]) => `<option value="${esc(k)}" ${k === val ? 'selected' : ''}>${esc(t)}</option>`).join('');
         const campoSel = (et, prop, arr) => `<div class="gruppo-campo"><label class="etichetta-campo" for="mk-d-${prop}">${et}</label><select class="campo" id="mk-d-${prop}" data-cambia="mk-mo-dopo" data-prop="${prop}">${opz(arr, d[prop])}</select></div>`;
-        corpo = `<div style="padding:14px var(--margine) 40px"><div class="griglia g-2" style="max-width:1100px;margin:0 auto">
+        if (!mo.regole) mo.regole = [];
+        const domandeRegole = mo.campi.filter((c) => !['nome', 'telefono', 'email', 'privacy', 'consensoWa', 'consensoEmail', 'nascosto', 'file'].includes(c.tipo)).map((c) => ({ chiave: c.id, etichetta: c.domanda, risposte: c.risposte && c.risposte.length ? c.risposte.slice() : undefined }));
+        const editorRegole = R.editorRegole ? R.editorRegole({ chiave: 'mo-' + mo.id, regole: mo.regole, domande: domandeRegole, alCambio: () => modificaModulo(), predefinite: () => predefiniteModulo(edm.copia) }) : '<p class="secondario">Le regole non sono disponibili in questa versione del prototipo.</p>';
+        corpo = `<div style="padding:14px var(--margine) 40px"><div style="max-width:1100px;margin:0 auto">
+          <div class="riquadro spazio-sotto"><h2 class="titolo-riquadro">Regole di qualificazione</h2>
+            <p class="secondario" style="margin:-6px 0 14px">Se il contatto risponde così, mandalo lì. Per esempio: chi ha segnalazioni come cattivo pagatore va in "Prefattibilità negativa", senza chiamata e con un ringraziamento neutro. Le regole valgono quando salvi il modulo.</p>
+            ${editorRegole}</div>
+          <h2 class="titolo-riquadro mk-altrimenti">Altrimenti (impostazioni predefinite)</h2>
+          <p class="secondario" style="margin:-8px 4px 14px;font-size:13px">Valgono per chi non rientra in nessuna regola.</p>
+          <div class="griglia g-2">
           <div class="riquadro"><h2 class="titolo-riquadro">Dove va il contatto</h2>
             ${campoSel('Percorso', 'percorso', R.stato.percorsi.map((x) => [x.id, x.nome]))}
             ${campoSel('Fase', 'fase', perc.fasi.filter((x) => !x.tipo).map((x) => [x.id, x.nome]))}
@@ -1911,7 +2078,7 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
             ${campoSel('Automazione da avviare', 'automazione', [['', 'Nessuna']].concat((R.stato.automazioni || []).map((a) => [a.id, a.nome])))}
             <div class="riga-impostazione"><span>Promemoria entro <input type="number" min="1" max="8" value="${+d.ore || 1}" data-digita="mk-mo-ore" aria-label="Ore di lavoro" style="width:48px;border:0;border-radius:999px;padding:4px 8px;text-align:center;font-weight:600"> ${(+d.ore || 1) === 1 ? 'ora' : 'ore'} di lavoro al responsabile</span><label class="interruttore"><input type="checkbox" data-cambia="mk-mo-dopo" data-prop="promemoria" ${d.promemoria ? 'checked' : ''} aria-label="Promemoria"><span></span></label></div>
             <p class="piccolo secondario" style="margin:0">Senza responsabile arriva un solo promemoria a tutti gli amministratori. Protezione anti-spam, controllo di telefono ed email e regole sui doppioni sono sempre attivi.</p></div>
-        </div></div>`;
+        </div></div></div>`;
       } else if (scheda === 'sito') {
         const codice = `<script src="https://moduli.rampant.it/${R.azienda().sottodominio}/${mo.id}.js" async></script>`;
         const link = `https://${sottodominio()}/modulo/${mo.id}`;
@@ -1939,6 +2106,32 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
 
   /* ---------- Azioni dell'editor dei moduli ---------- */
   const campoSel = () => edm.copia && edm.copia.campi.find((c) => c.id === edm.sel);
+  R.azioni['mk-mo-cond-aggiungi'] = () => {
+    const c = campoSel();
+    if (!c) return;
+    const mo = edm.copia;
+    const prima = mo.campi.slice(0, mo.campi.indexOf(c)).filter((x) => TIPI_CON_RISPOSTE.includes(x.tipo) && (x.risposte || []).length);
+    const rif = prima[prima.length - 1];
+    if (!rif) return;
+    c.mostraSe = { campo: rif.id, operatore: 'uguale', valore: rif.risposte[0] };
+    modificaModulo(); R.aggiorna();
+    R.avviso('Condizione aggiunta: scegli la domanda e la risposta');
+  };
+  R.azioni['mk-mo-cond'] = (el) => {
+    const c = campoSel();
+    if (!c || !c.mostraSe) return;
+    c.mostraSe[el.dataset.p] = el.value;
+    if (el.dataset.p === 'campo') { const rif = edm.copia.campi.find((x) => x.id === el.value); c.mostraSe.valore = rif && rif.risposte && rif.risposte.length ? rif.risposte[0] : ''; }
+    modificaModulo(); R.aggiorna();
+  };
+  R.azioni['mk-mo-cond-togli'] = () => {
+    const c = campoSel();
+    if (!c || !c.mostraSe) return;
+    const prima = c.mostraSe;
+    delete c.mostraSe;
+    modificaModulo(); R.aggiorna();
+    R.avviso('Condizione tolta: la domanda si vede sempre', { annulla() { c.mostraSe = prima; modificaModulo(); R.aggiorna(); } });
+  };
   R.azioni['mk-mo-sel'] = (el) => { if (edm.sel === el.dataset.id) return; edm.sel = el.dataset.id; R.aggiorna(); };
   R.azioni['mk-mo-aggiungi'] = (el) => {
     const t = el.dataset.tipo;
@@ -1972,8 +2165,10 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     if (mo.campi[i].tipo === 'nome') { R.avviso('Il nome serve sempre per creare il contatto: non si può togliere'); return; }
     if ((mo.campi[i].tipo === 'telefono' && !mo.campi.some((c) => c.tipo === 'email')) || (mo.campi[i].tipo === 'email' && !mo.campi.some((c) => c.tipo === 'telefono'))) { R.avviso('Serve almeno il telefono o l\'email: aggiungi l\'altro prima di togliere questo'); return; }
     const [tolto] = mo.campi.splice(i, 1);
+    const dipendenti = mo.campi.filter((x) => x.mostraSe && x.mostraSe.campo === tolto.id).map((x) => [x, x.mostraSe]);
+    dipendenti.forEach(([x]) => { delete x.mostraSe; });
     edm.sel = null; modificaModulo(); R.aggiorna();
-    R.avviso(`Campo "${esc(tolto.domanda)}" tolto`, { annulla() { mo.campi.splice(i, 0, tolto); edm.sel = tolto.id; R.aggiorna(); } });
+    R.avviso(`Campo "${esc(tolto.domanda)}" tolto${dipendenti.length ? ` · ${dipendenti.length === 1 ? '1 domanda che dipendeva da questo ora si vede sempre' : dipendenti.length + ' domande che dipendevano da questo ora si vedono sempre'}` : ''}`, { annulla() { mo.campi.splice(i, 0, tolto); dipendenti.forEach(([x, cond]) => { x.mostraSe = cond; }); edm.sel = tolto.id; R.aggiorna(); } });
   };
   R.azioni['mk-mo-prop'] = (el) => {
     const c = campoSel();
@@ -1999,7 +2194,11 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
   };
   R.azioni['mk-mo-risposta'] = (el) => {
     const c = campoSel(); if (!c) return;
-    c.risposte[+el.dataset.i] = el.value; modificaModulo();
+    const vecchia = c.risposte[+el.dataset.i];
+    c.risposte[+el.dataset.i] = el.value;
+    edm.copia.campi.forEach((x) => { if (x.mostraSe && x.mostraSe.campo === c.id && x.mostraSe.valore === vecchia) x.mostraSe.valore = el.value; });
+    (edm.copia.regole || []).forEach((r) => (r.condizioni || []).forEach((k) => { if (k.domanda === c.id && k.valore === vecchia) k.valore = el.value; }));
+    modificaModulo();
   };
   R.azioni['mk-mo-aggiungi-risposta'] = () => { const c = campoSel(); if (!c) return; c.risposte = c.risposte || []; c.risposte.push('Nuova risposta'); modificaModulo(); R.aggiorna(); };
   R.azioni['mk-mo-togli-risposta'] = (el) => { const c = campoSel(); if (!c) return; if (c.risposte.length <= 1) { R.avviso('Serve almeno una risposta'); return; } c.risposte.splice(+el.dataset.i, 1); modificaModulo(); R.aggiorna(); };
@@ -2047,9 +2246,9 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     const salvato = modulo(mo.id);
     const i = R.stato.moduli.indexOf(salvato);
     R.stato.moduli[i] = mo;
-    const html = htmlPagina(Object.assign(finto, { blocchi: [bl] }), { modo: 'anteprima' });
+    const html = htmlPagina(Object.assign(finto, { blocchi: [bl] }), { modo: 'prova' });
     R.stato.moduli[i] = salvato;
-    R.modale({ titolo: 'Anteprima del modulo', sottotitolo: 'Così lo vede il visitatore. I campi qui non si possono compilare.', corpo: html, pulsanti: [{ testo: 'Chiudi', chiudi: true }] });
+    R.modale({ titolo: 'Anteprima del modulo', sottotitolo: 'Così lo vede il visitatore. Puoi rispondere per vedere le domande condizionali: qui non si invia niente.', corpo: html, pulsanti: [{ testo: 'Chiudi', chiudi: true }] });
   };
 
   /* ================= Email marketing (immagine 22) ================= */
@@ -2384,6 +2583,19 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     return d;
   }
 
+  R.stile('marketing-regole', `
+    .pp-cond[hidden] { display: none !important; }
+    .pp-scelte label:has(input:checked) { box-shadow: inset 0 0 0 1.5px var(--pp-primario, #1F4D3A); font-weight: 600; }
+    .mk-cond-chip { display: inline-flex; align-items: center; gap: 5px; background: #EFE4F6; color: #45285C; border-radius: 999px; padding: 3px 10px; font-size: 11.5px; font-weight: 600; margin: 0 0 6px; font-family: var(--testi); }
+    .mk-cond-ridotto { display: none; align-items: center; gap: 8px; border: 1.5px dashed #CDB8DD; color: #45285C; background: #F8F3FB; border-radius: 12px; padding: 10px 12px; font-size: 13px; min-height: 44px; }
+    .mk-campo-mod.mk-cond-chiusa .mk-cond-ridotto { display: flex; }
+    .mk-campo-mod.mk-cond-chiusa .mk-cond-pieno { display: none; }
+    .mk-prova-nota { background: var(--campo); border-radius: 12px; padding: 8px 12px; font-size: 12.5px; color: var(--testo-3); margin: -6px 0 14px; }
+    .mk-cond-box { background: var(--lavanda); color: var(--lavanda-t); border-radius: 20px; padding: 12px 14px; margin-bottom: 14px; }
+    .mk-cond-box .campo { background: #fff; min-height: 42px; margin-bottom: 6px; font-size: 13.5px; }
+    .mk-cond-riga { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr); gap: 6px; }
+    .mk-altrimenti { margin: 24px 4px 12px; }
+  `);
   /* Ritocchi per il telefono: zone toccabili di almeno 44 px */
   R.stile('marketing-telefono', `@media (max-width: 767px) {
     .mk-pag .btn, .mk-chips button, .mk-suggerimenti button, .mk-msg .chip, .mk-riga-ind, .mk-barra-ai button { min-height: 44px; }

@@ -1959,6 +1959,7 @@
     { id: 'domini', nome: 'Domini', link: '#/marketing/domini' },
     { id: 'collegamenti', nome: 'Collegamenti esterni' },
     { id: 'meta', nome: 'Moduli Meta' },
+    { id: 'claude', nome: 'Claude', amministratori: true },
     { id: 'avvisi', nome: 'Avvisi', descr: 'Quali avvisi ricevono amministratori e collaboratori. Ognuno sceglie i propri canali (campanella, WhatsApp, email) in «Il mio profilo».' },
     { id: 'motivi', nome: 'Motivi di perdita' },
     { id: 'orario', nome: 'Orario di invio e festivi' },
@@ -1985,11 +1986,12 @@
   function disegnaImpostazioni(p) {
     prepara();
     const u = R.utente();
-    const sezioni = SEZIONI.filter((s) => !s.solo || u.ruolo === s.solo);
+    const visibile = (x) => (!x.solo || u.ruolo === x.solo) && (!x.amministratori || R.amministratore());
+    const sezioni = SEZIONI.filter(visibile);
     const id = (p && p.sezione) || 'utenti';
     const s = SEZIONI.find((x) => x.id === id);
     let contenuto;
-    if (!s || (s.solo && u.ruolo !== s.solo)) contenuto = '<div class="riquadro vuoto">Questa sezione non c\'è o non hai il permesso per aprirla. <a class="link verde" href="#/impostazioni">Torna alle impostazioni</a></div>';
+    if (!s || !visibile(s)) contenuto = '<div class="riquadro vuoto">Questa sezione non c\'è o non hai il permesso per aprirla. <a class="link verde" href="#/impostazioni">Torna alle impostazioni</a></div>';
     else if (s.link) contenuto = `<div class="riquadro"><h2 class="titolo-riquadro">${R.esc(s.nome)}</h2><p class="secondario">Questa parte ha una sua pagina.</p><a class="btn primario" href="${s.link}">Apri ${R.esc(s.nome)}</a></div>`;
     else contenuto = (SEZ[id] || sezioneNonPresente)(s);
     const tre = id === 'utenti' && u.ruolo === 'generale';
@@ -2749,7 +2751,51 @@
       <div class="elenco">${create.map((a) => { const pa = a.primoAvvio; const saltati = Object.values(pa.stati).filter((x) => x === 'saltato').length; return `<div class="riga"><span class="quadratino" style="background:${R.esc(a.colore)};color:#fff">${R.esc(sigla(a))}</span><div class="principale"><div class="titolo-riga">${R.esc(a.nome)}</div><div class="sotto">${pa.completato ? `finito${saltati ? ` · ${plurale(saltati, 'passo saltato', 'passi saltati')}` : ''}` : `al passo ${pa.passo} di 8`}</div></div><a class="btn piccolo secondario-campo" href="#/aziende/nuova?id=${a.id}${pa.completato ? '&passo=fine' : ''}">${pa.completato ? 'Riepilogo' : 'Riprendi'}</a></div>`; }).join('') || '<div class="vuoto">Nessuna azienda creata con il primo avvio.</div>'}</div>
       <a class="btn primario spazio-sopra" href="#/aziende/nuova">${R.icona('piu')} Nuova azienda per un cliente</a>` : ''}</div>`;
   }
-  const SEZ = { utenti: sezUtenti, aziende: sezAziende, percorsi: sezPercorsi, collegamenti: sezCollegamenti, meta: (s) => sezMeta(s), orario: sezOrario, motivi: sezMotivi, stop: sezStop, prefisso: sezPrefisso, registro: sezRegistro, 'primo-avvio': sezPrimoAvvio };
+  /* ---------- Claude (MCP) ---------- */
+  function sezClaude() {
+    const g = ge(); const c = g.claude || (g.claude = { collegato: false });
+    const scade = (iso) => { const d = new Date(iso); d.setFullYear(d.getFullYear() + 3); return d.toISOString(); };
+    const puo = ['Leggere contatti, affari, attività, storia e numeri della dashboard (solo quelli che vedi tu).', 'Creare e modificare in bozza pagine, funnel e moduli.', 'Creare e modificare in pausa le automazioni e provarle con un contatto finto.'];
+    const non = ['Mandare messaggi ai clienti (WhatsApp o email).', 'Mettere online una pagina o accendere un\'automazione: lo fai tu con un clic.', 'Cancellare qualcosa per sempre: al massimo lo mette nel Cestino.'];
+    const lista = (t, cls) => `<ul class="ge-claude-elenco ${cls}">${t.map((x) => `<li>${R.esc(x)}</li>`).join('')}</ul>`;
+    const stato = c.collegato
+      ? `<div class="riquadro medio salvia"><b>Claude è collegato</b> da ${R.esc(R.utenteDa(c.chi).nome)} il ${R.data(c.il)}. Il collegamento scade il ${R.data(scade(c.il))} (3 anni).</div>
+         <button class="btn rosso spazio-sopra" data-azione="ge-claude-scollega">Scollega Claude</button>`
+      : `<div class="riquadro medio beige">Claude non è collegato. Collegarlo è facile: premi il pulsante e segui i 4 passi.</div>
+         <button class="btn primario spazio-sopra" data-azione="ge-claude-collega">Collega Claude</button>`;
+    return `<div class="riquadro"><h2 class="titolo-riquadro">Claude</h2>
+      <p class="secondario" style="margin-top:-6px">Claude può lavorare dentro Rampant con i tuoi stessi permessi. Lo collega solo un amministratore; i collaboratori non vedono questa voce. Ogni sua azione resta nella storia come «tramite Claude».</p>
+      ${stato}
+      <div class="etichetta-campo spazio-sopra">Cosa può fare</div>${lista(puo, 'si')}
+      <div class="etichetta-campo">Cosa non fa mai</div>${lista(non, 'no')}
+      <p class="piccolo secondario">Tutto ciò che crea nasce in bozza. Costo: 0 €.</p></div>`;
+  }
+  R.azioni['ge-claude-collega'] = () => {
+    R.modale({
+      titolo: 'Collega Claude', sottotitolo: 'Quattro passi. Nel prototipo il collegamento è simulato.',
+      corpo: `<ol class="ge-ordine">${['Copia l\'indirizzo di Rampant che ti mostriamo (es. mcp.rampant.it).', 'In Claude apri Impostazioni → Connettori → Aggiungi connettore personalizzato e incollalo.', 'Si apre questa pagina: accedi come amministratore e leggi cosa potrà fare Claude.', 'Premi «Consenti». Niente chiavi da copiare.'].map((t, i) => `<li><span class="n">${i + 1}</span><span>${R.esc(t)}</span></li>`).join('')}</ol>`,
+      pulsanti: [{ testo: 'Annulla', chiudi: true }, { testo: 'Simula: Consenti', classe: 'primario', fai: () => {
+        const g = ge(); g.claude = { collegato: true, il: R.adesso(), chi: R.utente().id };
+        registra('Ha collegato Claude (accesso di 3 anni)'); R.salva(); R.aggiorna(); R.avviso('Claude collegato');
+      } }],
+    });
+  };
+  R.azioni['ge-claude-scollega'] = () => {
+    R.modale({
+      titolo: 'Scollegare Claude?', sottotitolo: 'Claude non potrà più leggere né modificare nulla. Quello che ha già creato in bozza resta dov\'è. Puoi ricollegarlo quando vuoi.', classe: 'stretta',
+      pulsanti: [{ testo: 'Annulla', chiudi: true }, { testo: 'Scollega', classe: 'rosso', fai: () => {
+        ge().claude = { collegato: false }; registra('Ha scollegato Claude'); R.salva(); R.aggiorna(); R.avviso('Claude scollegato');
+      } }],
+    });
+  };
+  R.stile('gestione-claude', `
+    .ge-claude-elenco { list-style: none; padding: 0; margin: 6px 0 14px; }
+    .ge-claude-elenco li { padding: 6px 0 6px 26px; position: relative; font-size: 14px; }
+    .ge-claude-elenco li::before { position: absolute; left: 0; top: 5px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+    .ge-claude-elenco.si li::before { content: '✓'; background: var(--lime); color: var(--scuro); }
+    .ge-claude-elenco.no li::before { content: '✕'; background: var(--errore); color: var(--errore-t); }
+  `);
+  const SEZ = { claude: sezClaude, utenti: sezUtenti, aziende: sezAziende, percorsi: sezPercorsi, collegamenti: sezCollegamenti, meta: (s) => sezMeta(s), orario: sezOrario, motivi: sezMotivi, stop: sezStop, prefisso: sezPrefisso, registro: sezRegistro, 'primo-avvio': sezPrimoAvvio };
 
   /* ================= PRIMO AVVIO GUIDATO DI UNA NUOVA AZIENDA (capitolo 12, percorso 8) ================= */
   const MODELLI_SETTORE = {

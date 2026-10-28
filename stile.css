@@ -522,3 +522,15 @@ select.campo { appearance: none; background-image: linear-gradient(45deg, transp
 @media (min-width: 768px) {
   .solo-telefono { display: none !important; }
 }
+
+/* Colori delle azioni (28/10/2026): rosso = toglie o chiude, verde = conferma, resto neutro */
+button[data-azione*="elimina"], button[data-azione*="definitivo"], button[data-azione="sc-perso"], button[data-azione="ge-disattiva"], button[data-azione="ge-annulla-invito"], button[data-azione="ge-claude-scollega"] {
+  background: var(--errore) !important; color: var(--errore-t) !important; font-weight: 600;
+}
+button[data-azione*="elimina"]:hover, button[data-azione*="definitivo"]:hover, button[data-azione="sc-perso"]:hover, button[data-azione="ge-disattiva"]:hover, button[data-azione="ge-annulla-invito"]:hover {
+  background: var(--errore-t) !important; color: #fff !important; filter: none;
+}
+button[data-azione="sc-vinto"] { background: var(--lime) !important; color: var(--scuro) !important; font-weight: 600; }
+.tendina button[data-azione*="elimina"], .tendina button[data-azione*="definitivo"], .tendina button[data-azione="ge-disattiva"], .tendina button[data-azione="ge-annulla-invito"] { background: transparent !important; }
+.tendina button[data-azione*="elimina"]:hover, .tendina button[data-azione="ge-disattiva"]:hover { background: var(--errore) !important; color: var(--errore-t) !important; }
+button[data-azione*="elimina"] svg, button[data-azione="sc-perso"] svg { color: inherit; }

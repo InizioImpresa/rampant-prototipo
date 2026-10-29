@@ -132,14 +132,18 @@
     { id: 'contatti', testo: 'Contatti', href: '#/contatti', icona: 'persone' },
     { id: 'attivita', testo: 'Attività', href: '#/attivita', icona: 'spunta' },
     { id: 'calendario', testo: 'Calendario', href: '#/calendario', icona: 'calendario' },
-    { id: 'funnel', testo: 'Funnel', href: '#/funnel', icona: 'filtro' },
-    { id: 'marketing', testo: 'Marketing', href: '#/marketing/funnel', icona: 'pagina', permesso: 'funnel' },
-    { id: 'automazioni', testo: 'Automazioni', href: '#/automazioni', icona: 'fulmine', permesso: 'automazioni' },
-    { id: 'whatsapp', testo: 'WhatsApp', href: '#/whatsapp', icona: 'whatsapp' },
+    { id: 'funnel', testo: 'Funnel', href: '#/funnel', icona: 'filtro', riservata: true },
+    { id: 'marketing', testo: 'Marketing', href: '#/marketing/funnel', icona: 'pagina', permesso: 'funnel', riservata: true },
+    { id: 'automazioni', testo: 'Automazioni', href: '#/automazioni', icona: 'fulmine', permesso: 'automazioni', riservata: true },
+    { id: 'whatsapp', testo: 'WhatsApp', href: '#/whatsapp', icona: 'whatsapp', riservata: true },
     { id: 'report', testo: 'Report', href: '#/report', icona: 'grafico' },
     { id: 'impostazioni', testo: 'Impostazioni', href: '#/impostazioni', icona: 'ingranaggio', soloAmministratori: true },
   ];
-  R.vociMenu = () => R.menu.filter((v) => (!v.permesso || R.puo(v.permesso)) && (!v.soloAmministratori || R.amministratore()));
+  /* Sezioni riservate (decisione 29/10/2026): le vede sempre l'amministratore generale; gli utenti di un'azienda solo se l'azienda ha l'interruttore acceso
+     (di base acceso per le aziende proprie, spento per quelle dei clienti). */
+  R.sezioniRiservate = (a) => { const az = a || R.azienda(); return !!az && (az.riservate !== undefined ? !!az.riservate : az.tipo === 'propria'); };
+  R.vediRiservate = () => R.utente().ruolo === 'generale' || R.sezioniRiservate();
+  R.vociMenu = () => R.menu.filter((v) => (!v.permesso || R.puo(v.permesso)) && (!v.soloAmministratori || R.amministratore()) && (!v.riservata || R.vediRiservate()));
 
   function trovaRotta(percorso) {
     for (const r of R.rotte) {

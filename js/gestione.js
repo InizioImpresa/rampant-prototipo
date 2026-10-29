@@ -1953,12 +1953,12 @@
     { id: 'percorsi', nome: 'Percorsi di vendita' },
     { id: 'campi', nome: 'Campi personalizzati', descr: 'Campi di contatti e affari: testo, numero, valuta, data, scelta, scelta multipla, sì/no, file. Eliminare un campo mostra quanti dati si perdono e propone di nasconderlo.' },
     { id: 'etichette', nome: 'Etichette', descr: 'Le etichette condivise da tutta l\'azienda, con il loro colore. I collaboratori usano quelle esistenti.' },
-    { id: 'libreria', nome: 'Libreria file', link: '#/marketing/libreria' },
-    { id: 'whatsapp', nome: 'Numeri WhatsApp', link: '#/whatsapp' },
+    { id: 'libreria', nome: 'Libreria file', link: '#/marketing/libreria', riservata: true },
+    { id: 'whatsapp', nome: 'Numeri WhatsApp', link: '#/whatsapp', riservata: true },
     { id: 'email', nome: 'Email', descr: 'Indirizzo e dominio di invio, firma, e l\'indirizzo per le risposte, che finiscono nella storia del contatto.' },
-    { id: 'domini', nome: 'Domini', link: '#/marketing/domini' },
-    { id: 'collegamenti', nome: 'Collegamenti esterni' },
-    { id: 'meta', nome: 'Moduli Meta' },
+    { id: 'domini', nome: 'Domini', link: '#/marketing/domini', riservata: true },
+    { id: 'collegamenti', nome: 'Collegamenti esterni', riservata: true },
+    { id: 'meta', nome: 'Moduli Meta', riservata: true },
     { id: 'claude', nome: 'Claude', solo: 'generale' },
     { id: 'avvisi', nome: 'Avvisi', descr: 'Quali avvisi ricevono amministratori e collaboratori. Ognuno sceglie i propri canali (campanella, WhatsApp, email) in «Il mio profilo».' },
     { id: 'motivi', nome: 'Motivi di perdita' },
@@ -1980,13 +1980,14 @@
     ['reportTutti', 'Vedere i report di tutti', 'Spento: nei report vede solo i propri numeri.', 'Report di tutti'],
     ['inviiMultipli', 'Invii a più contatti', 'WhatsApp ed email a più destinatari insieme.', 'Invii a più contatti'],
   ];
+  const permessiVisibili = () => PERMESSI.filter(([k]) => !['funnel', 'automazioni'].includes(k) || R.sezioniRiservate());
   const emailValida = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
   const amministratoriAttivi = () => R.stato.utenti.filter((x) => ['generale', 'azienda'].includes(x.ruolo) && x.stato === 'attivo');
 
   function disegnaImpostazioni(p) {
     prepara();
     const u = R.utente();
-    const visibile = (x) => (!x.solo || u.ruolo === x.solo) && (!x.amministratori || R.amministratore());
+    const visibile = (x) => (!x.solo || u.ruolo === x.solo) && (!x.amministratori || R.amministratore()) && (!x.riservata || R.vediRiservate());
     const sezioni = SEZIONI.filter(visibile);
     const id = (p && p.sezione) || 'utenti';
     const s = SEZIONI.find((x) => x.id === id);
@@ -2032,7 +2033,7 @@
     return `<div class="riquadro scuro spazio-sopra">
       <h2 class="titolo-riquadro">Chi vede cosa</h2>
       <div class="riga-impostazione"><span>Amministratori: vedono e modificano tutto in questa azienda</span><span class="valore">Sempre</span></div>
-      ${coll.map((u) => `<button class="ge-chi" data-azione="ge-permessi" data-id="${u.id}" aria-label="Cambia i permessi di ${R.esc(u.nome)}"><div class="grassetto">${R.esc(u.nome)}${u.stato === 'invitato' ? ' · invito in attesa' : ''}</div>${PERMESSI.map(([k, , , breve]) => { const on = !!(u.permessi || {})[k]; return `<span class="ge-perm ${on ? 'on' : 'off'}">${on ? '' : '<span class="nascosto-accessibile">non </span>'}${breve}</span>`; }).join('')}</button>`).join('') || '<p style="opacity:.8">Non ci sono collaboratori.</p>'}
+      ${coll.map((u) => `<button class="ge-chi" data-azione="ge-permessi" data-id="${u.id}" aria-label="Cambia i permessi di ${R.esc(u.nome)}"><div class="grassetto">${R.esc(u.nome)}${u.stato === 'invitato' ? ' · invito in attesa' : ''}</div>${permessiVisibili().map(([k, , , breve]) => { const on = !!(u.permessi || {})[k]; return `<span class="ge-perm ${on ? 'on' : 'off'}">${on ? '' : '<span class="nascosto-accessibile">non </span>'}${breve}</span>`; }).join('')}</button>`).join('') || '<p style="opacity:.8">Non ci sono collaboratori.</p>'}
       <div class="riga-impostazione"><span>Note: chi vede un cliente vede tutte le sue note</span><span class="valore">Sempre</span></div>
       <p class="piccolo" style="opacity:.75;margin:8px 4px 12px">In verde chiaro ciò che il collaboratore può fare. Tocca una persona per cambiare i suoi permessi.</p>
       ${coll.length ? `<button class="btn lime largo" data-azione="ge-vede-tutti" data-acceso="${tuttiOn ? '1' : ''}">${tuttiOn ? 'Spegni «Vede tutti» per tutti i collaboratori' : 'Accendi «Vede tutti» per tutti i collaboratori'}</button>` : ''}
@@ -2068,7 +2069,7 @@
       corpo: `${gruppo('Ruolo', scelta('id="ge-ruolo" name="ruolo"', [['collaboratore', 'Collaboratore'], ['azienda', 'Amministratore dell\'azienda (vede e modifica tutto)']], u.ruolo), 'ge-ruolo')}
         <div class="riga-impostazione"><span>Numero WhatsApp</span><span class="valore">${n ? R.esc(n.telefono + ' · ' + R.statoNumero(n.id)) : 'nessuno'}</span></div>
         <div class="etichetta-campo spazio-sopra">Cosa può fare da collaboratore</div>
-        ${PERMESSI.map(([k, t, s]) => `<div class="riga-impostazione" style="border-radius:22px"><span>${t}${s ? `<br><span class="piccolo secondario">${s}</span>` : ''}</span>${interruttore(`name="${k}" aria-label="${R.esc(t)}"`, perm[k])}</div>`).join('')}`,
+        ${permessiVisibili().map(([k, t, s]) => `<div class="riga-impostazione" style="border-radius:22px"><span>${t}${s ? `<br><span class="piccolo secondario">${s}</span>` : ''}</span>${interruttore(`name="${k}" aria-label="${R.esc(t)}"`, perm[k])}</div>`).join('')}`,
       pulsanti: [{ testo: 'Annulla', chiudi: true }, {
         testo: 'Salva', classe: 'primario', fai: (f) => {
           const v = R.valori(f);
@@ -2232,7 +2233,8 @@
     const badge = a.stato === 'sospesa' ? '<span class="etichetta pesca">Sospesa</span>' : a.stato === 'chiusa' ? '<span class="etichetta errore">Chiusa</span>' : '';
     return `<div class="ge-azienda ${qui ? 'qui' : ''} ${a.stato === 'chiusa' ? 'chiusa' : ''}">
       <span class="quadratino" style="background:${R.esc(a.colore)}">${R.esc(sigla(a))}</span>
-      <div class="principale"><div class="titolo-riga">${R.esc(a.nome)}</div><div class="sotto">${R.esc(parti.join(' · '))}</div></div>
+      <div class="principale"><div class="titolo-riga">${R.esc(a.nome)}</div><div class="sotto">${R.esc(parti.join(' · '))}</div>
+        ${a.stato !== 'chiusa' ? `<label class="sotto" style="display:flex;gap:6px;align-items:center;margin-top:4px;cursor:pointer"><input type="checkbox" data-cambia="ge-azienda-riservate" data-id="${a.id}" ${R.sezioniRiservate(a) ? 'checked' : ''}> Funnel, Marketing, Automazioni e WhatsApp per i suoi utenti</label>` : ''}</div>
       ${badge}
       ${!qui && a.stato !== 'chiusa' ? `<button class="link" style="min-height:44px;padding:0 4px" data-azione="ge-entra" data-id="${a.id}">Entra</button>` : ''}
       ${!qui ? `<button class="btn tondo" style="background:var(--bianco)" data-azione="ge-azienda-menu" data-id="${a.id}" aria-label="Azioni per ${R.esc(a.nome)}">${R.icona('puntini')}</button>` : ''}
@@ -2252,6 +2254,11 @@
       <li><b>Sospesa</b>: entra solo l'amministratore generale; le pagine pubbliche mostrano un messaggio neutro; automazioni in pausa; quello che arriva si salva ma non parte nulla.</li>
       <li><b>Chiusa</b>: prima mandiamo l'esportazione completa all'amministratore dell'azienda (link valido 30 giorni); numeri e domini scollegati; si può riaprire entro 90 giorni, poi i dati si eliminano (con avviso 7 giorni prima).</li></ul></div>`;
   }
+  R.azioni['ge-azienda-riservate'] = (el) => {
+    const a = R.stato.aziende.find((x) => x.id === el.dataset.id); if (!a) return;
+    a.riservate = el.checked; registra(`Ha ${a.riservate ? 'acceso' : 'spento'} le sezioni riservate di ${a.nome}`); R.salva(); R.aggiorna();
+    R.avviso(a.riservate ? `Gli utenti di ${R.esc(a.nome)} ora vedono anche Funnel, Marketing, Automazioni e WhatsApp` : `Gli utenti di ${R.esc(a.nome)} vedono solo la parte commerciale`);
+  };
   R.azioni['ge-azienda-menu'] = (el) => {
     const a = R.stato.aziende.find((x) => x.id === el.dataset.id);
     if (!a) return;

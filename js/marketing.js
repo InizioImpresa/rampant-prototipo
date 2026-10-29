@@ -688,7 +688,7 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
 
   /* ================= Barra Marketing ================= */
   const VOCI_MK = [
-    ['funnel', 'Pagine'], ['siti', 'Siti web'], ['moduli', 'Moduli'], ['sondaggi', 'Sondaggi'], ['blog', 'Blog'],
+    ['funnel', 'Pagine'], ['siti', 'Siti web'], ['moduli', 'Moduli'], ['sondaggi', 'Sondaggi'],
     ['email', 'Email marketing'], ['sequenze', 'Sequenze email'], ['libreria', 'Libreria file'], ['domini', 'Domini'],
   ];
   const barraMk = (attiva) => `<nav class="mk-barra" aria-label="Sezioni di Marketing">${VOCI_MK.map(([id, t]) => `<a href="#/marketing/${id}" class="${id === attiva ? 'attivo' : ''}"${id === attiva ? ' aria-current="page"' : ''}>${t}</a>`).join('')}</nav>`;
@@ -838,8 +838,8 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     f.querySelector('[name=descrizione]').value = ESEMPIO_AI.descrizione;
   };
 
-  /* ---------- Siti web, Sondaggi, Blog: non nel prototipo ---------- */
-  [['siti', 'Siti web', 'Siti a più pagine con menu.', 'globo'], ['sondaggi', 'Sondaggi', 'Sondaggi e quiz a più passaggi, con le risposte salvate nei campi del contatto.', 'domanda'], ['blog', 'Blog', 'Articoli, categorie e impostazioni per Google.', 'nota']].forEach(([id, nome, spieg, icona]) => R.rotta('/marketing/' + id, {
+  /* ---------- Siti web, Sondaggi: non nel prototipo (Blog tolto il 29/10/2026) ---------- */
+  [['siti', 'Siti web', 'Siti a più pagine con menu.', 'globo'], ['sondaggi', 'Sondaggi', 'Sondaggi e quiz a più passaggi, con le risposte salvate nei campi del contatto.', 'domanda']].forEach(([id, nome, spieg, icona]) => R.rotta('/marketing/' + id, {
     menu: 'marketing',
     titolo: nome,
     disegna: () => `${barraMk(id)}<div class="testata"><div><div class="sopratitolo">Marketing</div><h1 class="titolo-pagina">${nome}</h1><div class="spiegazione">${spieg}</div></div></div>

@@ -534,3 +534,6 @@ button[data-azione="sc-vinto"] { background: var(--lime) !important; color: var(
 .tendina button[data-azione*="elimina"], .tendina button[data-azione*="definitivo"], .tendina button[data-azione="ge-disattiva"], .tendina button[data-azione="ge-annulla-invito"] { background: transparent !important; }
 .tendina button[data-azione*="elimina"]:hover, .tendina button[data-azione="ge-disattiva"]:hover { background: var(--errore) !important; color: var(--errore-t) !important; }
 button[data-azione*="elimina"] svg, button[data-azione="sc-perso"] svg { color: inherit; }
+
+/* Menu in alto con 11 voci: voci un po' più strette sui computer medi */
+@media (min-width: 1181px) and (max-width: 1500px) { .menu-principale a { padding: 9px 10px; font-size: 13.5px; } }

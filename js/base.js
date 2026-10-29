@@ -132,6 +132,7 @@
     { id: 'contatti', testo: 'Contatti', href: '#/contatti', icona: 'persone' },
     { id: 'attivita', testo: 'Attività', href: '#/attivita', icona: 'spunta' },
     { id: 'calendario', testo: 'Calendario', href: '#/calendario', icona: 'calendario' },
+    { id: 'funnel', testo: 'Funnel', href: '#/funnel', icona: 'filtro' },
     { id: 'marketing', testo: 'Marketing', href: '#/marketing/funnel', icona: 'pagina', permesso: 'funnel' },
     { id: 'automazioni', testo: 'Automazioni', href: '#/automazioni', icona: 'fulmine', permesso: 'automazioni' },
     { id: 'whatsapp', testo: 'WhatsApp', href: '#/whatsapp', icona: 'whatsapp' },

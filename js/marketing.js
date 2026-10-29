@@ -689,9 +689,10 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
   /* ================= Barra Marketing ================= */
   const VOCI_MK = [
     ['funnel', 'Funnel e pagine'], ['siti', 'Siti web'], ['moduli', 'Moduli'], ['sondaggi', 'Sondaggi'], ['blog', 'Blog'],
-    ['email', 'Email marketing'], ['libreria', 'Libreria file'], ['domini', 'Domini'],
+    ['email', 'Email marketing'], ['sequenze', 'Sequenze email'], ['libreria', 'Libreria file'], ['domini', 'Domini'],
   ];
   const barraMk = (attiva) => `<nav class="mk-barra" aria-label="Sezioni di Marketing">${VOCI_MK.map(([id, t]) => `<a href="#/marketing/${id}" class="${id === attiva ? 'attivo' : ''}"${id === attiva ? ' aria-current="page"' : ''}>${t}</a>`).join('')}</nav>`;
+  R.barraMk = barraMk;
   const aggiornaIndirizzo = (f) => { f.indirizzo = f.dominio + '/' + f.percorsoPagina; };
   const segnaModifica = (f) => { if (f) f.ultimaModifica = { chi: R.utente().id, quando: R.adesso() }; };
 

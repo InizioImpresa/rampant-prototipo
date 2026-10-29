@@ -1959,7 +1959,7 @@
     { id: 'domini', nome: 'Domini', link: '#/marketing/domini' },
     { id: 'collegamenti', nome: 'Collegamenti esterni' },
     { id: 'meta', nome: 'Moduli Meta' },
-    { id: 'claude', nome: 'Claude', amministratori: true },
+    { id: 'claude', nome: 'Claude', solo: 'generale' },
     { id: 'avvisi', nome: 'Avvisi', descr: 'Quali avvisi ricevono amministratori e collaboratori. Ognuno sceglie i propri canali (campanella, WhatsApp, email) in «Il mio profilo».' },
     { id: 'motivi', nome: 'Motivi di perdita' },
     { id: 'orario', nome: 'Orario di invio e festivi' },
@@ -2764,7 +2764,7 @@
       : `<div class="riquadro medio beige">Claude non è collegato. Collegarlo è facile: premi il pulsante e segui i 4 passi.</div>
          <button class="btn primario spazio-sopra" data-azione="ge-claude-collega">Collega Claude</button>`;
     return `<div class="riquadro"><h2 class="titolo-riquadro">Claude</h2>
-      <p class="secondario" style="margin-top:-6px">Claude può lavorare dentro Rampant con i tuoi stessi permessi. Lo collega solo un amministratore; i collaboratori non vedono questa voce. Ogni sua azione resta nella storia come «tramite Claude».</p>
+      <p class="secondario" style="margin-top:-6px">Claude può lavorare dentro Rampant con i tuoi stessi permessi. Lo collega solo l'amministratore generale; gli altri utenti non vedono questa voce. Ogni sua azione resta nella storia come «tramite Claude».</p>
       ${stato}
       <div class="etichetta-campo spazio-sopra">Cosa può fare</div>${lista(puo, 'si')}
       <div class="etichetta-campo">Cosa non fa mai</div>${lista(non, 'no')}
@@ -2773,7 +2773,7 @@
   R.azioni['ge-claude-collega'] = () => {
     R.modale({
       titolo: 'Collega Claude', sottotitolo: 'Quattro passi. Nel prototipo il collegamento è simulato.',
-      corpo: `<ol class="ge-ordine">${['Copia l\'indirizzo di Rampant che ti mostriamo (es. mcp.rampant.it).', 'In Claude apri Impostazioni → Connettori → Aggiungi connettore personalizzato e incollalo.', 'Si apre questa pagina: accedi come amministratore e leggi cosa potrà fare Claude.', 'Premi «Consenti». Niente chiavi da copiare.'].map((t, i) => `<li><span class="n">${i + 1}</span><span>${R.esc(t)}</span></li>`).join('')}</ol>`,
+      corpo: `<ol class="ge-ordine">${['Copia l\'indirizzo di Rampant che ti mostriamo (es. mcp.rampant.it).', 'In Claude apri Impostazioni → Connettori → Aggiungi connettore personalizzato e incollalo.', 'Si apre questa pagina: accedi come amministratore generale e leggi cosa potrà fare Claude.', 'Premi «Consenti». Niente chiavi da copiare.'].map((t, i) => `<li><span class="n">${i + 1}</span><span>${R.esc(t)}</span></li>`).join('')}</ol>`,
       pulsanti: [{ testo: 'Annulla', chiudi: true }, { testo: 'Simula: Consenti', classe: 'primario', fai: () => {
         const g = ge(); g.claude = { collegato: true, il: R.adesso(), chi: R.utente().id };
         registra('Ha collegato Claude (accesso di 3 anni)'); R.salva(); R.aggiorna(); R.avviso('Claude collegato');

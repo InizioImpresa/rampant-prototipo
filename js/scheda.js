@@ -121,6 +121,7 @@
         <div class="riga-flex" style="gap:8px">${c.fonte ? `<span class="etichetta cielo" style="font-size:12.5px;padding:6px 12px">${R.esc(c.fonte)}</span>` : ''}${c.campagna ? `<span class="etichetta" style="font-size:12.5px;padding:6px 12px">Campagna ${R.esc(c.campagna)}</span>` : ''}${c.pagina ? `<span class="etichetta" style="font-size:12.5px;padding:6px 12px">${R.esc(c.pagina)}</span>` : ''}</div>
         <div class="piccolo secondario" style="margin-top:10px">Arrivato ${R.giornoRelativo(c.creato)} alle ${R.ora(c.creato)}</div>
       </div>
+      ${(() => { const q = R.sequenzaDi && R.sequenzaDi(c); return q ? `<div class="riquadro"><h2 class="titolo-riquadro">Sequenza email</h2><div class="grassetto" style="font-size:14px">${R.esc(q.nome)}</div><div class="piccolo secondario" style="margin-top:4px">Giorno ${q.giorno} · ${q.prossimo ? 'prossimo messaggio al giorno ' + q.prossimo.giorno + ' («' + R.esc(q.prossimo.oggetto) + '»)' : 'tutti i messaggi sono partiti'}</div><a class="link verde piccolo" href="#/marketing/sequenze" style="display:inline-block;margin-top:8px">Vedi la sequenza</a></div>` : ''; })()}
       <button class="riquadro tratteggiato" style="font-weight:600;cursor:pointer;color:var(--testo-3)" data-azione="sc-aggiungi-campo">+ Aggiungi sezione o campo</button>`;
   }
 

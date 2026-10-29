@@ -688,7 +688,7 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
 
   /* ================= Barra Marketing ================= */
   const VOCI_MK = [
-    ['funnel', 'Funnel e pagine'], ['siti', 'Siti web'], ['moduli', 'Moduli'], ['sondaggi', 'Sondaggi'], ['blog', 'Blog'],
+    ['funnel', 'Pagine'], ['siti', 'Siti web'], ['moduli', 'Moduli'], ['sondaggi', 'Sondaggi'], ['blog', 'Blog'],
     ['email', 'Email marketing'], ['sequenze', 'Sequenze email'], ['libreria', 'Libreria file'], ['domini', 'Domini'],
   ];
   const barraMk = (attiva) => `<nav class="mk-barra" aria-label="Sezioni di Marketing">${VOCI_MK.map(([id, t]) => `<a href="#/marketing/${id}" class="${id === attiva ? 'attivo' : ''}"${id === attiva ? ' aria-current="page"' : ''}>${t}</a>`).join('')}</nav>`;
@@ -715,7 +715,7 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
   /* ================= Elenco funnel (immagine 13) ================= */
   R.rotta('/marketing/funnel', {
     menu: 'marketing',
-    titolo: 'Funnel e pagine',
+    titolo: 'Pagine',
     disegna() {
       assicura();
       const fl = R.stato.filtri || (R.stato.filtri = {});
@@ -738,7 +738,7 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
       };
       return `${barraMk('funnel')}
         <div class="testata">
-          <div><div class="sopratitolo">${tutti.length} funnel · ${num(visite)} visite e ${num(contatti)} contatti questo mese</div><h1 class="titolo-pagina">Funnel e pagine</h1><div class="spiegazione">Le pagine che raccolgono contatti, in ordine di visita. Da qui le crei, le modifichi e le pubblichi.</div></div>
+          <div><div class="sopratitolo">${tutti.length} funnel · ${num(visite)} visite e ${num(contatti)} contatti questo mese</div><h1 class="titolo-pagina">Pagine</h1><div class="spiegazione">Le pagine che raccolgono contatti, in ordine di visita. Da qui le crei, le modifichi e le pubblichi.</div></div>
           <div class="azioni-testata">
             <div class="ricerca mk-cerca">${R.icona('cerca')}<input class="campo" type="search" placeholder="Cerca un funnel" aria-label="Cerca un funnel" value="${esc(fl.mkCerca || '')}" data-digita="mk-cerca-funnel"></div>
             <button class="btn lavanda" data-azione="mk-crea-ai">${R.icona('stelline', 16)} Crea con l'AI</button>
@@ -843,7 +843,7 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     menu: 'marketing',
     titolo: nome,
     disegna: () => `${barraMk(id)}<div class="testata"><div><div class="sopratitolo">Marketing</div><h1 class="titolo-pagina">${nome}</h1><div class="spiegazione">${spieg}</div></div></div>
-      <div class="riquadro mk-placeholder"><span class="quadratino lavanda">${R.icona(icona)}</span><div class="titolo-riquadro piccolo" style="margin:0">Questa sezione non è nel prototipo</div><p style="margin:0" class="secondario">Esisterà nel software vero, con lo stesso editor delle pagine.</p><a class="btn secondario-campo" href="#/marketing/funnel">Vai a Funnel e pagine</a></div>`,
+      <div class="riquadro mk-placeholder"><span class="quadratino lavanda">${R.icona(icona)}</span><div class="titolo-riquadro piccolo" style="margin:0">Questa sezione non è nel prototipo</div><p style="margin:0" class="secondario">Esisterà nel software vero, con lo stesso editor delle pagine.</p><a class="btn secondario-campo" href="#/marketing/funnel">Vai a Pagine</a></div>`,
   }));
 
   /* ================= Dettaglio funnel (immagine 14) ================= */
@@ -871,7 +871,7 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     disegna(par, q) {
       assicura();
       const f = funnel(par.id);
-      if (!f || f.eliminato) return `${barraMk('funnel')}<div class="riquadro vuoto spazio-sopra">Questo funnel non esiste più. <a class="link verde" href="#/marketing/funnel">Torna a Funnel e pagine</a></div>`;
+      if (!f || f.eliminato) return `${barraMk('funnel')}<div class="riquadro vuoto spazio-sopra">Questo funnel non esiste più. <a class="link verde" href="#/marketing/funnel">Torna a Pagine</a></div>`;
       const scheda = q.scheda || 'pagine';
       const pagine = pagineDi(f.id);
       const generale = R.utente().ruolo === 'generale';
@@ -930,7 +930,7 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
       }
       return `${barraMk('funnel')}
         <div class="testata">
-          <div><a class="indietro" href="#/marketing/funnel">${R.icona('freccia-sinistra', 14)} Funnel e pagine</a>
+          <div><a class="indietro" href="#/marketing/funnel">${R.icona('freccia-sinistra', 14)} Pagine</a>
             <div class="riga-flex"><h1 class="titolo-pagina">${esc(f.nome)}</h1>${etichettaStato(f)}</div>
             <div style="margin-top:8px">${url}</div>
             ${copie.length ? `<div class="piccolo secondario" style="margin-top:4px">Copiato in: ${copie.map((c) => esc((R.stato.aziende.find((a) => a.id === c.azienda) || {}).nome || '') + ' (bozza, ' + R.dataBreve(c.quando) + ')').join(', ')}</div>` : ''}
@@ -1282,7 +1282,7 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     disegna(par) {
       assicura();
       const p = pagina(par.id);
-      if (!p || !funnel(p.funnel)) return '<div class="riquadro vuoto" style="margin:20px">Questa pagina non esiste più. <a class="link verde" href="#/marketing/funnel">Torna a Funnel e pagine</a></div>';
+      if (!p || !funnel(p.funnel)) return '<div class="riquadro vuoto" style="margin:20px">Questa pagina non esiste più. <a class="link verde" href="#/marketing/funnel">Torna a Pagine</a></div>';
       apriEditor(p.id);
       const f = funnel(p.funnel);
       const tel = telefono();
@@ -1625,7 +1625,7 @@ input[type=range].mk-range { width: 100%; accent-color: var(--verde); height: 30
     disegna(par) {
       assicura();
       const p = pagina(par.id);
-      if (!p || !funnel(p.funnel)) return '<div class="riquadro vuoto" style="margin:20px">Questa pagina non esiste più. <a class="link verde" href="#/marketing/funnel">Torna a Funnel e pagine</a></div>';
+      if (!p || !funnel(p.funnel)) return '<div class="riquadro vuoto" style="margin:20px">Questa pagina non esiste più. <a class="link verde" href="#/marketing/funnel">Torna a Pagine</a></div>';
       apriEditor(p.id);
       const f = funnel(p.funnel);
       const tel = telefono();

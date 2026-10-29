@@ -82,6 +82,16 @@
     },
   });
 
+  /* Per la scheda del contatto: in quale sequenza accesa si trova e a che giorno (solo se ha email e consenso email) */
+  R.sequenzaDi = (c) => {
+    if (!c || !c.email || !c.consensi || c.consensi.email !== 'si') return null;
+    const sq = sequenze().find((s) => s.attiva && s.messaggi.length && s.id === 'sq1');
+    if (!sq) return null;
+    const giorno = Math.max(0, Math.floor((Date.now() - new Date(c.creato).getTime()) / 86400000));
+    const ms = sq.messaggi.slice().sort((a, b) => a.giorno - b.giorno);
+    if (giorno > ms[ms.length - 1].giorno) return null;
+    return { nome: sq.nome, giorno, prossimo: ms.find((m) => m.giorno > giorno) || null };
+  };
   R.azioni['mk-sq-sel'] = (el) => { R.stato.filtri.mkSequenza = el.dataset.id; R.salva(); R.aggiorna(); };
   R.azioni['mk-sq-attiva'] = (el) => {
     const s = sequenze().find((x) => x.id === el.dataset.id); s.attiva = el.checked; R.salva(); R.aggiorna();
